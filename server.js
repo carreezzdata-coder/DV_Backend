@@ -10,46 +10,19 @@ const isProduction = process.env.NODE_ENV === 'production';
 
 const server = http.createServer(app);
 
-const getSocketIOOrigins = () => {
-  if (isProduction) {
-    return [
+const allowedOrigins = isProduction
+  ? [
       'https://www.dailyvaibe.com',
       'https://dailyvaibe.com',
       'https://admin.dailyvaibe.com',
       'https://api.dailyvaibe.com',
-      'https://dailyvaibe-frontend.onrender.com',
-      'https://dailyvaibe-backend.onrender.com',
       process.env.FRONTEND_URL,
       process.env.CLIENT_URL,
       process.env.ADMIN_URL,
       process.env.CORS_ORIGIN,
       process.env.RENDER_EXTERNAL_URL
-    ].filter(origin => {
-      if (!origin) return false;
-      const lowerOrigin = origin.toLowerCase();
-      if (lowerOrigin.includes('localhost') || 
-          lowerOrigin.includes('127.0.0.1') ||
-          lowerOrigin.includes('0.0.0.0')) {
-        console.error(`Security: Blocking localhost origin in production: ${origin}`);
-        return false;
-      }
-      return true;
-    });
-  } else {
-    return [
-      'http://localhost:3000',
-      'http://localhost:5173',
-      'http://localhost:5000',
-      'http://localhost:5001',
-      'http://127.0.0.1:3000',
-      'http://127.0.0.1:5000',
-      'http://127.0.0.1:5173',
-      'http://127.0.0.1:5001'
-    ];
-  }
-};
-
-const allowedOrigins = getSocketIOOrigins();
+    ].filter(Boolean)
+  : ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:5001'];
 
 const io = new Server(server, {
   cors: {
