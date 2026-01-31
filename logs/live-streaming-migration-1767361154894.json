@@ -1,0 +1,12 @@
+{
+  "timestamp": "2026-01-02T13:39:14.894Z",
+  "database": "dailyvaibe",
+  "migration": "Live Streaming Toggle System",
+  "summary": {
+    "total_steps": 1,
+    "completed": 0,
+    "failed": 1,
+    "warnings": 0
+  },
+  "details": []
+}

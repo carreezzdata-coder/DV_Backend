@@ -1,0 +1,401 @@
+const express = require('express');
+const router = express.Router();
+
+let dbModule = null;
+let dbError = null;
+
+try {
+  dbModule = require('../../config/db');
+} catch (error) {
+  dbError = error.message;
+  console.error('Database module load error:', error.message);
+}
+
+const getImageUrl = (imageUrl) => {
+  if (!imageUrl) return null;
+  if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) return imageUrl;
+  const r2Url = process.env.R2_PUBLIC_URL;
+  if (r2Url) {
+    const cleanUrl = r2Url.endsWith('/') ? r2Url.slice(0, -1) : r2Url;
+    const cleanImage = imageUrl.startsWith('/') ? imageUrl.substring(1) : imageUrl;
+    return `${cleanUrl}/${cleanImage}`;
+  }
+  return imageUrl.startsWith('/') ? imageUrl : `/uploads/images/${imageUrl}`;
+};
+
+const GROUP_MAPPINGS = {
+  'world': ['national', 'east-africa', 'africa', 'international', 'live', 'world-reports'],
+  'counties': ['nairobi', 'coast', 'mountain', 'lake-region', 'rift-valley', 'northern', 'eastern', 'western', 'county-reports'],
+  'politics': ['politics', 'governance', 'legal', 'elections', 'parliament', 'political-reports', 'politics-others'],
+  'business': ['business', 'companies', 'finance-markets', 'investment', 'enterprise', 'economy', 'banking', 'business-reports'],
+  'opinion': ['opinion', 'editorials', 'columnists', 'bloggers', 'letters', 'trail-blazing', 'ai-graphics', 'analysis'],
+  'sports': ['sports', 'sport', 'football', 'athletics', 'rugby', 'motorsport', 'sports-vybe', 'cricket', 'basketball', 'other-sports', 'sports-others'],
+  'lifestyle': ['lifestyle', 'motoring', 'culture', 'family', 'relationships', 'travel', 'wellness', 'fashion', 'food', 'lifestyle-others'],
+  'entertainment': ['entertainment', 'buzz', 'trending', 'trending-pics', 'gossip', 'life-stories', 'music', 'movies', 'celebrity', 'entertainment-others'],
+  'tech': ['tech', 'technology', 'innovations', 'gadgets', 'startups', 'digital-life', 'ai', 'mobile', 'gaming', 'tech-reports', 'tech-others'],
+  'other': ['other', 'others', 'human-rights', 'climate-crisis', 'investigations', 'interactives', 'features', 'in-pictures', 'special-reports']
+};
+
+const GROUP_INFO = {
+  'world': { name: 'World', description: 'Breaking news and global coverage', color: '#2563eb', icon: '🌍' },
+  'counties': { name: 'Counties', description: 'Regional news coverage across Kenya', color: '#3498db', icon: '🏢' },
+  'politics': { name: 'Politics', description: 'Political news and analysis', color: '#e74c3c', icon: '🏛️' },
+  'business': { name: 'Business', description: 'Business, economy and finance news', color: '#2ecc71', icon: '💼' },
+  'opinion': { name: 'Opinion', description: 'Editorials and commentary', color: '#9b59b6', icon: '💭' },
+  'sports': { name: 'Sports', description: 'Sports news and analysis', color: '#f39c12', icon: '⚽' },
+  'lifestyle': { name: 'Life & Style', description: 'Lifestyle, culture and wellness', color: '#e91e63', icon: '🎭' },
+  'entertainment': { name: 'Entertainment', description: 'Entertainment and celebrity news', color: '#ff6b6b', icon: '🎉' },
+  'tech': { name: 'Technology', description: 'Tech news and innovations', color: '#1abc9c', icon: '💻' },
+  'other': { name: 'Other', description: 'Miscellaneous content', color: '#34495e', icon: '📌' }
+};
+
+router.get('/slugs', async (req, res) => {
+  res.set({
+    'Cache-Control': 'public, max-age=3600, s-maxage=7200, stale-while-revalidate=86400',
+    'CDN-Cache-Control': 'max-age=7200, stale-while-revalidate=86400',
+    'Vary': 'Accept-Encoding'
+  });
+
+  try {
+    const groups = Object.keys(GROUP_INFO).map(slug => ({
+      slug,
+      name: GROUP_INFO[slug].name,
+      description: GROUP_INFO[slug].description
+    }));
+    res.json({ success: true, groups, slugs: Object.keys(GROUP_INFO) });
+  } catch (error) {
+    console.error('Error fetching group slugs:', error);
+    res.status(500).json({ success: false, slugs: [] });
+  }
+});
+
+router.get('/:groupSlug', async (req, res) => {
+  res.set({
+    'Cache-Control': 'public, max-age=600, s-maxage=1200, stale-while-revalidate=86400',
+    'CDN-Cache-Control': 'max-age=1200, stale-while-revalidate=86400',
+    'Vary': 'Accept-Encoding'
+  });
+
+  if (!dbModule) return res.status(500).json({ success: false, error: dbError });
+
+  try {
+    const { getPool } = dbModule;
+    const pool = getPool();
+    const { groupSlug } = req.params;
+    const groupInfo = GROUP_INFO[groupSlug];
+    const categorySlugs = GROUP_MAPPINGS[groupSlug];
+
+    if (!groupInfo || !categorySlugs) {
+      return res.status(404).json({ success: false, message: `Category group '${groupSlug}' not found` });
+    }
+
+    const categoriesResult = await pool.query(
+      `SELECT category_id, name, slug, color, icon, description
+       FROM categories WHERE slug = ANY($1) AND active = true ORDER BY order_index ASC`,
+      [categorySlugs]
+    );
+
+    return res.json({
+      success: true,
+      group: {
+        slug: groupSlug,
+        ...groupInfo,
+        categories: categoriesResult.rows
+      },
+      seo: {
+        title: `${groupInfo.name} News - Daily Vaibe`,
+        description: groupInfo.description,
+        canonical_url: `/category/${groupSlug}`
+      }
+    });
+
+  } catch (error) {
+    console.error(`Group info error for ${req.params.groupSlug}:`, error);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+router.get('/:groupSlug/news', async (req, res) => {
+  res.set({
+    'Cache-Control': 'public, max-age=120, s-maxage=300, stale-while-revalidate=1800',
+    'CDN-Cache-Control': 'max-age=300, stale-while-revalidate=1800',
+    'Vary': 'Accept-Encoding'
+  });
+
+  if (!dbModule) return res.status(500).json({ success: false, news: [], error: dbError });
+
+  try {
+    const { getPool } = dbModule;
+    const pool = getPool();
+    const { groupSlug } = req.params;
+    const page = Math.max(1, parseInt(req.query.page || '1'));
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit || '20')));
+    const offset = (page - 1) * limit;
+
+    const categorySlugs = GROUP_MAPPINGS[groupSlug];
+    const groupInfo = GROUP_INFO[groupSlug];
+
+    if (!categorySlugs || !groupInfo) {
+      return res.status(404).json({ success: false, message: `Category group '${groupSlug}' not found` });
+    }
+
+    const categoryIdsQuery = `SELECT category_id, name, slug, color FROM categories WHERE slug = ANY($1) AND active = true`;
+    const categoryIdsResult = await pool.query(categoryIdsQuery, [categorySlugs]);
+    const categoryIds = categoryIdsResult.rows.map(row => row.category_id);
+
+    if (categoryIds.length === 0) {
+      return res.json({
+        success: true,
+        category: {
+          category_id: 0,
+          name: groupInfo.name,
+          slug: groupSlug,
+          description: groupInfo.description,
+          color: groupInfo.color,
+          icon: groupInfo.icon,
+          active: true,
+          is_group: true,
+          sub_categories: []
+        },
+        news: [],
+        pagination: { current_page: page, per_page: limit, total_news: 0, total_pages: 0, has_next: false, has_prev: false }
+      });
+    }
+
+    const countQuery = `
+      SELECT COUNT(DISTINCT n.news_id) as total
+      FROM news n
+      INNER JOIN news_categories nc ON n.news_id = nc.news_id
+      WHERE nc.category_id = ANY($1) AND n.status = 'published'
+    `;
+    const countResult = await pool.query(countQuery, [categoryIds]);
+    const totalNews = parseInt(countResult.rows[0].total);
+
+    const newsQuery = `
+      SELECT DISTINCT ON (n.news_id)
+        n.news_id, n.title, n.excerpt, n.slug,
+        n.image_url, n.status, n.priority, n.tags,
+        n.reading_time, n.views, n.likes_count, n.comments_count, n.share_count,
+        n.published_at, n.created_at, n.updated_at, n.meta_description,
+        COALESCE(a.first_name, 'Daily Vaibe') as first_name,
+        COALESCE(a.last_name, 'Editor') as last_name,
+        a.email as author_email,
+        pc.name as category_name, 
+        pc.slug as category_slug, 
+        pc.color as category_color
+      FROM news n
+      INNER JOIN news_categories nc ON n.news_id = nc.news_id
+      LEFT JOIN admins a ON n.author_id = a.admin_id
+      LEFT JOIN news_categories pnc ON n.news_id = pnc.news_id AND pnc.is_primary = true
+      LEFT JOIN categories pc ON pnc.category_id = pc.category_id
+      WHERE nc.category_id = ANY($1) AND n.status = 'published'
+      ORDER BY n.news_id, n.published_at DESC
+      OFFSET $2 LIMIT $3
+    `;
+
+    const newsResult = await pool.query(newsQuery, [categoryIds, offset, limit]);
+
+    const processedNews = newsResult.rows.map(article => ({
+      ...article,
+      image_url: getImageUrl(article.image_url),
+      tags: article.tags ? article.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
+      author: { first_name: article.first_name, last_name: article.last_name }
+    }));
+
+    const totalPages = Math.ceil(totalNews / limit);
+
+    return res.json({
+      success: true,
+      category: {
+        category_id: 0,
+        name: groupInfo.name,
+        slug: groupSlug,
+        description: groupInfo.description,
+        color: groupInfo.color,
+        icon: groupInfo.icon,
+        active: true,
+        is_group: true,
+        sub_categories: categoryIdsResult.rows
+      },
+      news: processedNews,
+      pagination: {
+        current_page: page, per_page: limit, total_news: totalNews,
+        total_pages: totalPages, has_next: page < totalPages, has_prev: page > 1
+      },
+      seo: {
+        title: `${groupInfo.name} News - Page ${page} - Daily Vaibe`,
+        description: groupInfo.description,
+        canonical_url: `/category/${groupSlug}${page > 1 ? `?page=${page}` : ''}`
+      }
+    });
+
+  } catch (error) {
+    console.error(`Category group news error for ${req.params.groupSlug}:`, error);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+router.get('/:groupSlug/featured', async (req, res) => {
+  res.set({
+    'Cache-Control': 'public, max-age=300, s-maxage=600, stale-while-revalidate=1800',
+    'CDN-Cache-Control': 'max-age=600, stale-while-revalidate=1800',
+    'Vary': 'Accept-Encoding'
+  });
+
+  if (!dbModule) return res.status(500).json({ success: false, featured_news: [], error: dbError });
+
+  try {
+    const { getPool } = dbModule;
+    const pool = getPool();
+    const { groupSlug } = req.params;
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit || '10')));
+
+    const categorySlugs = GROUP_MAPPINGS[groupSlug];
+    const groupInfo = GROUP_INFO[groupSlug];
+
+    if (!categorySlugs || !groupInfo) {
+      return res.status(404).json({ success: false, message: `Category group '${groupSlug}' not found` });
+    }
+
+    const categoryIdsResult = await pool.query(
+      `SELECT category_id FROM categories WHERE slug = ANY($1) AND active = true`,
+      [categorySlugs]
+    );
+    const categoryIds = categoryIdsResult.rows.map(row => row.category_id);
+
+    if (categoryIds.length === 0) {
+      return res.json({ success: true, featured_news: [], total: 0 });
+    }
+
+    const newsQuery = `
+      SELECT DISTINCT ON (n.news_id)
+        n.news_id, n.title, n.excerpt, n.slug, n.image_url, n.published_at,
+        n.reading_time, n.views, n.likes_count, n.meta_description,
+        COALESCE(a.first_name, 'Daily Vaibe') as first_name,
+        COALESCE(a.last_name, 'Editor') as last_name,
+        pc.name as category_name, 
+        pc.slug as category_slug, 
+        pc.color as category_color,
+        f.tier as featured_tier,
+        f.ends_at as featured_until
+      FROM news n
+      INNER JOIN news_categories nc ON n.news_id = nc.news_id
+      LEFT JOIN admins a ON n.author_id = a.admin_id
+      LEFT JOIN news_categories pnc ON n.news_id = pnc.news_id AND pnc.is_primary = true
+      LEFT JOIN categories pc ON pnc.category_id = pc.category_id
+      INNER JOIN featured_news f ON n.news_id = f.news_id
+      WHERE nc.category_id = ANY($1) 
+        AND n.status = 'published' 
+        AND f.manually_removed = false
+        AND (f.ends_at IS NULL OR f.ends_at > CURRENT_TIMESTAMP)
+      ORDER BY n.news_id,
+        CASE f.tier
+          WHEN 'gold' THEN 1
+          WHEN 'silver' THEN 2
+          WHEN 'bronze' THEN 3
+          ELSE 4
+        END,
+        f.ends_at DESC NULLS LAST,
+        n.published_at DESC
+      LIMIT $2
+    `;
+
+    const newsResult = await pool.query(newsQuery, [categoryIds, limit]);
+
+    const processedNews = newsResult.rows.map(article => ({
+      ...article,
+      image_url: getImageUrl(article.image_url)
+    }));
+
+    return res.json({
+      success: true,
+      featured_news: processedNews,
+      group_slug: groupSlug,
+      group_name: groupInfo.name,
+      total: processedNews.length
+    });
+
+  } catch (error) {
+    console.error(`Group featured error for ${req.params.groupSlug}:`, error);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+router.get('/:groupSlug/trending', async (req, res) => {
+  res.set({
+    'Cache-Control': 'public, max-age=120, s-maxage=240, stale-while-revalidate=600',
+    'CDN-Cache-Control': 'max-age=240, stale-while-revalidate=600',
+    'Vary': 'Accept-Encoding'
+  });
+
+  if (!dbModule) return res.status(500).json({ success: false, trending_news: [], error: dbError });
+
+  try {
+    const { getPool } = dbModule;
+    const pool = getPool();
+    const { groupSlug } = req.params;
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit || '10')));
+    const days = Math.min(30, Math.max(1, parseInt(req.query.days || '7')));
+
+    const categorySlugs = GROUP_MAPPINGS[groupSlug];
+    const groupInfo = GROUP_INFO[groupSlug];
+
+    if (!categorySlugs || !groupInfo) {
+      return res.status(404).json({ success: false, message: `Category group '${groupSlug}' not found` });
+    }
+
+    const categoryIdsResult = await pool.query(
+      `SELECT category_id FROM categories WHERE slug = ANY($1) AND active = true`,
+      [categorySlugs]
+    );
+    const categoryIds = categoryIdsResult.rows.map(row => row.category_id);
+
+    if (categoryIds.length === 0) {
+      return res.json({ success: true, trending_news: [], total: 0, period_days: days });
+    }
+
+    const newsQuery = `
+      SELECT DISTINCT ON (n.news_id)
+        n.news_id, n.title, n.excerpt, n.slug, n.image_url, n.published_at,
+        n.reading_time, n.views, n.likes_count, n.share_count, n.comments_count,
+        n.meta_description,
+        COALESCE(a.first_name, 'Daily Vaibe') as first_name,
+        COALESCE(a.last_name, 'Editor') as last_name,
+        pc.name as category_name, 
+        pc.slug as category_slug, 
+        pc.color as category_color,
+        (COALESCE(n.views, 0) + COALESCE(n.likes_count, 0) * 3 + COALESCE(n.share_count, 0) * 5) as engagement_score
+      FROM news n
+      INNER JOIN news_categories nc ON n.news_id = nc.news_id
+      LEFT JOIN admins a ON n.author_id = a.admin_id
+      LEFT JOIN news_categories pnc ON n.news_id = pnc.news_id AND pnc.is_primary = true
+      LEFT JOIN categories pc ON pnc.category_id = pc.category_id
+      WHERE nc.category_id = ANY($1) AND n.status = 'published'
+        AND n.published_at >= NOW() - INTERVAL '1 day' * $3
+      ORDER BY n.news_id, engagement_score DESC, n.published_at DESC
+      LIMIT $2
+    `;
+
+    const newsResult = await pool.query(newsQuery, [categoryIds, limit, days]);
+
+    const processedNews = newsResult.rows.map(article => ({
+      ...article,
+      image_url: getImageUrl(article.image_url)
+    }));
+
+    return res.json({
+      success: true,
+      trending_news: processedNews,
+      group_slug: groupSlug,
+      group_name: groupInfo.name,
+      total: processedNews.length,
+      period_days: days
+    });
+
+  } catch (error) {
+    console.error(`Group trending error for ${req.params.groupSlug}:`, error);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+module.exports = router;

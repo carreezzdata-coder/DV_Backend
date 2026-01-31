@@ -1,0 +1,599 @@
+const express = require('express');
+const router = express.Router();
+const bcrypt = require('bcryptjs');
+const { getPool } = require('../../config/db');
+const requireAdminAuth = require('../../middleware/adminAuth');
+const { getUserRole, canManageUsers } = require('../../middleware/rolePermissions');
+
+const { FRONTEND_URL, CLIENT_URL, ADMIN_URL, API_DOMAIN, ALLOWED_ORIGINS, isOriginAllowed } = require('../../config/frontendconfig');
+
+const isProduction = process.env.NODE_ENV === 'production';
+
+const ROLE_HIERARCHY = {
+  super_admin: 4,
+  admin: 3,
+  editor: 2,
+  moderator: 1
+};
+
+const canManageRole = (requesterRole, targetRole) => {
+  return ROLE_HIERARCHY[requesterRole] > ROLE_HIERARCHY[targetRole];
+};
+
+router.get('/', requireAdminAuth, async (req, res) => {
+  const pool = getPool();
+
+  try {
+    const adminId = req.adminId;
+    const userRole = await getUserRole(adminId);
+
+    if (!canManageUsers(userRole)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only Super Admins and Admins can view users',
+        your_role: userRole,
+        users: []
+      });
+    }
+
+    const { search, role, status = 'active' } = req.query;
+
+    let query = `
+      SELECT
+        a.admin_id,
+        a.first_name,
+        a.last_name,
+        a.email,
+        a.phone,
+        a.role,
+        a.status,
+        a.created_at,
+        a.last_login,
+        COALESCE(COUNT(n.news_id), 0) AS posts_count
+      FROM admins a
+      LEFT JOIN news n ON a.admin_id = n.author_id
+    `;
+
+    const conditions = [];
+    const params = [];
+    let paramIndex = 1;
+
+    if (status) {
+      conditions.push(`a.status = $${paramIndex}`);
+      params.push(status);
+      paramIndex++;
+    }
+
+    if (search && search.trim()) {
+      conditions.push(`(
+        a.first_name ILIKE $${paramIndex} OR
+        a.last_name ILIKE $${paramIndex} OR
+        a.email ILIKE $${paramIndex}
+      )`);
+      params.push(`%${search.trim()}%`);
+      paramIndex++;
+    }
+
+    if (role && role.trim()) {
+      conditions.push(`a.role = $${paramIndex}`);
+      params.push(role.trim());
+      paramIndex++;
+    }
+
+    if (userRole === 'admin') {
+      conditions.push(`a.role != 'super_admin'`);
+    }
+
+    if (conditions.length > 0) {
+      query += ' WHERE ' + conditions.join(' AND ');
+    }
+
+    query += `
+      GROUP BY a.admin_id, a.first_name, a.last_name, a.email, a.phone, a.role, a.status, a.created_at, a.last_login
+      ORDER BY a.created_at DESC
+    `;
+
+    const result = await pool.query(query, params);
+
+    res.status(200).json({
+      success: true,
+      users: result.rows,
+      total: result.rows.length,
+      your_role: userRole
+    });
+
+  } catch (error) {
+    console.error('[Admin Users] GET error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      users: [],
+      error: isProduction ? undefined : error.message
+    });
+  }
+});
+
+router.post('/', requireAdminAuth, async (req, res) => {
+  const pool = getPool();
+
+  try {
+    const adminId = req.adminId;
+    const userRole = await getUserRole(adminId);
+
+    if (!canManageUsers(userRole)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only Super Admins and Admins can create users',
+        your_role: userRole
+      });
+    }
+
+    const { first_name, last_name, email, phone, password, role } = req.body;
+
+    if (!first_name?.trim() || !last_name?.trim() || !email?.trim() || !password?.trim() || !role?.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'First name, last name, email, password, and role are required'
+      });
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid email format'
+      });
+    }
+
+    if (password.trim().length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 6 characters long'
+      });
+    }
+
+    const validRoles = ['moderator', 'editor', 'admin', 'super_admin'];
+    if (!validRoles.includes(role.trim())) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid role specified'
+      });
+    }
+
+    if (!canManageRole(userRole, role.trim())) {
+      return res.status(403).json({
+        success: false,
+        message: `Only Super Admins can create ${role.trim()} accounts`,
+        your_role: userRole
+      });
+    }
+
+    const existingUser = await pool.query(
+      'SELECT admin_id FROM admins WHERE email = $1',
+      [email.trim().toLowerCase()]
+    );
+
+    if (existingUser.rows.length > 0) {
+      return res.status(409).json({
+        success: false,
+        message: 'Email already in use'
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(password.trim(), 12);
+
+    const result = await pool.query(
+      `INSERT INTO admins (first_name, last_name, email, phone, password_hash, role, status, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+       RETURNING admin_id, first_name, last_name, email, phone, role, status, created_at`,
+      [
+        first_name.trim(),
+        last_name.trim(),
+        email.trim().toLowerCase(),
+        phone?.trim() || null,
+        hashedPassword,
+        role.trim()
+      ]
+    );
+
+    const ip = req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.ip || 'unknown';
+    try {
+      await pool.query(
+        `INSERT INTO admin_activity_log (admin_id, action, target_type, target_id, details, ip_address, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)`,
+        [
+          adminId,
+          'create_user',
+          'admin',
+          result.rows[0].admin_id,
+          `Created new ${role.trim()} user: ${email.trim().toLowerCase()}`,
+          ip
+        ]
+      );
+    } catch (logError) {
+      console.warn('[Admin Users] Failed to log activity:', logError.message);
+    }
+
+    res.status(201).json({
+      success: true,
+      message: 'Admin user created successfully',
+      user: result.rows[0]
+    });
+
+  } catch (error) {
+    console.error('[Admin Users] POST error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: isProduction ? undefined : error.message
+    });
+  }
+});
+
+router.put('/', requireAdminAuth, async (req, res) => {
+  const pool = getPool();
+
+  try {
+    const adminId = req.adminId;
+    const userRole = await getUserRole(adminId);
+
+    if (!canManageUsers(userRole)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only Super Admins and Admins can update users',
+        your_role: userRole
+      });
+    }
+
+    const { id } = req.query;
+    const { first_name, last_name, email, phone, role } = req.body;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: 'User ID is required'
+      });
+    }
+
+    if (!first_name?.trim() || !last_name?.trim() || !email?.trim() || !role?.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'First name, last name, email, and role are required'
+      });
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid email format'
+      });
+    }
+
+    const validRoles = ['moderator', 'editor', 'admin', 'super_admin'];
+    if (!validRoles.includes(role.trim())) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid role specified'
+      });
+    }
+
+    const existingUser = await pool.query(
+      'SELECT admin_id, email, role FROM admins WHERE admin_id = $1',
+      [id]
+    );
+
+    if (existingUser.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    const targetUser = existingUser.rows[0];
+
+    if (parseInt(id) === adminId && targetUser.role === 'super_admin' && role.trim() !== 'super_admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'You cannot demote yourself from super admin'
+      });
+    }
+
+    if (!canManageRole(userRole, role.trim())) {
+      return res.status(403).json({
+        success: false,
+        message: `Only Super Admins can assign ${role.trim()} role`,
+        your_role: userRole
+      });
+    }
+
+    if (!canManageRole(userRole, targetUser.role)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Insufficient permissions to modify this user',
+        your_role: userRole
+      });
+    }
+
+    const emailCheck = await pool.query(
+      'SELECT admin_id FROM admins WHERE email = $1 AND admin_id != $2',
+      [email.trim().toLowerCase(), id]
+    );
+
+    if (emailCheck.rows.length > 0) {
+      return res.status(409).json({
+        success: false,
+        message: 'Email already in use by another user'
+      });
+    }
+
+    const result = await pool.query(
+      `UPDATE admins
+       SET first_name = $1, last_name = $2, email = $3, phone = $4, role = $5, updated_at = CURRENT_TIMESTAMP
+       WHERE admin_id = $6
+       RETURNING admin_id, first_name, last_name, email, phone, role, status, updated_at`,
+      [
+        first_name.trim(),
+        last_name.trim(),
+        email.trim().toLowerCase(),
+        phone?.trim() || null,
+        role.trim(),
+        id
+      ]
+    );
+
+    const ip = req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.ip || 'unknown';
+    try {
+      await pool.query(
+        `INSERT INTO admin_activity_log (admin_id, action, target_type, target_id, details, ip_address, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)`,
+        [
+          adminId,
+          'update_user',
+          'admin',
+          id,
+          `Updated user: ${email.trim().toLowerCase()} (role: ${targetUser.role} -> ${role.trim()})`,
+          ip
+        ]
+      );
+    } catch (logError) {
+      console.warn('[Admin Users] Failed to log activity:', logError.message);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Admin user updated successfully',
+      user: result.rows[0]
+    });
+
+  } catch (error) {
+    console.error('[Admin Users] PUT error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: isProduction ? undefined : error.message
+    });
+  }
+});
+
+router.delete('/', requireAdminAuth, async (req, res) => {
+  const pool = getPool();
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const adminId = req.adminId;
+    const userRole = await getUserRole(adminId);
+
+    if (!canManageUsers(userRole)) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({
+        success: false,
+        message: 'Only Super Admins and Admins can delete users',
+        your_role: userRole
+      });
+    }
+
+    const { id } = req.query;
+
+    if (!id) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'User ID is required'
+      });
+    }
+
+    const existingUser = await client.query(
+      'SELECT admin_id, email, first_name, last_name, role FROM admins WHERE admin_id = $1',
+      [id]
+    );
+
+    if (existingUser.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    const userToDelete = existingUser.rows[0];
+
+    if (parseInt(id) === adminId) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({
+        success: false,
+        message: 'You cannot delete your own account'
+      });
+    }
+
+    if (!canManageRole(userRole, userToDelete.role)) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({
+        success: false,
+        message: 'Insufficient permissions to delete this user',
+        your_role: userRole
+      });
+    }
+
+    if (userToDelete.role === 'super_admin') {
+      const superAdminCount = await client.query(
+        'SELECT COUNT(*) as count FROM admins WHERE role = $1 AND status = $2',
+        ['super_admin', 'active']
+      );
+
+      if (parseInt(superAdminCount.rows[0].count) <= 1) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({
+          success: false,
+          message: 'Cannot delete the last super administrator'
+        });
+      }
+
+      if (userRole !== 'super_admin') {
+        await client.query('ROLLBACK');
+        return res.status(403).json({
+          success: false,
+          message: 'Only Super Admins can delete super admin accounts',
+          your_role: userRole
+        });
+      }
+    }
+
+    await client.query(
+      'UPDATE news SET author_id = NULL WHERE author_id = $1',
+      [id]
+    );
+
+    await client.query('DELETE FROM admins WHERE admin_id = $1', [id]);
+
+    const ip = req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.ip || 'unknown';
+    try {
+      await client.query(
+        `INSERT INTO admin_activity_log (admin_id, action, target_type, target_id, details, ip_address, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)`,
+        [
+          adminId,
+          'delete_user',
+          'admin',
+          id,
+          `Deleted ${userToDelete.role} user: ${userToDelete.first_name} ${userToDelete.last_name} (${userToDelete.email})`,
+          ip
+        ]
+      );
+    } catch (logError) {
+      console.warn('[Admin Users] Failed to log activity:', logError.message);
+    }
+
+    await client.query('COMMIT');
+
+    res.status(200).json({
+      success: true,
+      message: 'Admin user deleted successfully'
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('[Admin Users] DELETE error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: isProduction ? undefined : error.message
+    });
+  } finally {
+    client.release();
+  }
+});
+
+router.get('/:id/posts', requireAdminAuth, async (req, res) => {
+  const pool = getPool();
+
+  try {
+    const adminId = req.adminId;
+    const userRole = await getUserRole(adminId);
+
+    if (!canManageUsers(userRole)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only Super Admins and Admins can view user posts',
+        your_role: userRole
+      });
+    }
+
+    const { id } = req.params;
+    const { page = 1, limit = 20, status } = req.query;
+
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+
+    let whereConditions = ['n.author_id = $1'];
+    let queryParams = [id];
+    let paramCount = 1;
+
+    if (status) {
+      paramCount++;
+      whereConditions.push(`n.status = $${paramCount}`);
+      queryParams.push(status);
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+    const postsQuery = `
+      SELECT
+        n.news_id,
+        n.title,
+        n.slug,
+        n.status,
+        n.created_at,
+        n.published_at,
+        n.views,
+        n.likes_count,
+        n.comments_count,
+        c.name as category_name
+      FROM news n
+      LEFT JOIN categories c ON n.primary_category_id = c.category_id
+      ${whereClause}
+      ORDER BY n.created_at DESC
+      LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}
+    `;
+
+    queryParams.push(parseInt(limit), offset);
+
+    const countQuery = `
+      SELECT COUNT(*) as total FROM news n ${whereClause}
+    `;
+
+    const [postsResult, countResult] = await Promise.all([
+      pool.query(postsQuery, queryParams),
+      pool.query(countQuery, queryParams.slice(0, -2))
+    ]);
+
+    const totalPosts = parseInt(countResult.rows[0].total);
+
+    res.status(200).json({
+      success: true,
+      posts: postsResult.rows,
+      pagination: {
+        current_page: parseInt(page),
+        total_pages: Math.ceil(totalPosts / parseInt(limit)),
+        total_posts: totalPosts,
+        has_next: parseInt(page) < Math.ceil(totalPosts / parseInt(limit)),
+        has_prev: parseInt(page) > 1
+      },
+      user_info: {
+        user_id: id,
+        total_posts: totalPosts
+      }
+    });
+
+  } catch (error) {
+    console.error('[Admin Users] Posts error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: isProduction ? undefined : error.message
+    });
+  }
+});
+
+module.exports = router;

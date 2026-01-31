@@ -1,0 +1,348 @@
+const express = require('express');
+const router = express.Router();
+const { getPool } = require('../../config/db');
+
+const { FRONTEND_URL, CLIENT_URL, ADMIN_URL, API_DOMAIN, ALLOWED_ORIGINS, isOriginAllowed } = require('../../config/frontendconfig');
+
+const cloudflareService = require('../../services/cloudflareService');
+
+const getImageUrl = (imageUrl) => {
+  if (!imageUrl) return null;
+  if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) return imageUrl;
+  const cleanPath = imageUrl.startsWith('/') ? imageUrl.substring(1) : imageUrl;
+  if (cloudflareService.isEnabled()) {
+    return cloudflareService.getPublicUrl(cleanPath);
+  }
+  if (process.env.NODE_ENV === 'development') return `http://localhost:5000/${cleanPath}`;
+  const r2Url = process.env.R2_PUBLIC_URL;
+  if (r2Url) {
+    const cleanUrl = r2Url.endsWith('/') ? r2Url.slice(0, -1) : r2Url;
+    return `${cleanUrl}/${cleanPath}`;
+  }
+  return imageUrl;
+};
+
+const classifyMediaKind = (platform, postType) => {
+  const platformLower = (platform || '').toLowerCase();
+  const typeLower = (postType || '').toLowerCase();
+  const videoPlatforms = ['youtube', 'vimeo', 'dailymotion', 'tiktok'];
+  const videoTypes = ['video', 'reel', 'short'];
+  const isVideo = videoPlatforms.some(vp => platformLower.includes(vp)) || 
+                  videoTypes.some(vt => typeLower.includes(vt));
+  return isVideo ? 'video' : 'post';
+};
+
+router.get('/:slug', async (req, res) => {
+  try {
+  try {
+  res.set({
+    'Cache-Control': 'public, max-age=300, s-maxage=900, stale-while-revalidate=3600',
+    'CDN-Cache-Control': 'max-age=900',
+    'Vary': 'Accept-Encoding',
+    'X-Content-Type-Options': 'nosniff'
+  });
+
+  try {
+    const pool = getPool();
+    const { slug } = req.params;
+
+    const articleQuery = `
+      SELECT
+        n.news_id, n.title, n.content, n.excerpt, n.slug, n.image_url,
+        n.status, n.tags, n.reading_time, n.views, n.likes_count,
+        n.comments_count, n.share_count, n.published_at, n.updated_at,
+        n.meta_description, n.seo_keywords, n.category_id,
+        COALESCE(a.first_name, 'VybesTribe') as first_name,
+        COALESCE(a.last_name, 'Editor') as last_name,
+        a.admin_id as author_id,
+        c.name as category_name,
+        c.slug as category_slug,
+        c.color as category_color,
+        c.icon as category_icon,
+        (SELECT tier FROM featured_news WHERE news_id = n.news_id AND manually_removed = false LIMIT 1) as featured_tier,
+        (SELECT ends_at FROM featured_news WHERE news_id = n.news_id AND manually_removed = false LIMIT 1) as featured_until,
+        (SELECT priority FROM breaking_news WHERE news_id = n.news_id AND manually_removed = false LIMIT 1) as breaking_level,
+        (SELECT ends_at FROM breaking_news WHERE news_id = n.news_id AND manually_removed = false LIMIT 1) as breaking_until,
+        (SELECT tier FROM pinned_news WHERE news_id = n.news_id AND manually_removed = false LIMIT 1) as pin_type,
+        (SELECT ends_at FROM pinned_news WHERE news_id = n.news_id AND manually_removed = false LIMIT 1) as pin_until,
+        (SELECT COUNT(*) > 0 FROM editor_pick WHERE news_id = n.news_id AND manually_removed = false) as editor_pick
+      FROM news n
+      LEFT JOIN admins a ON n.author_id = a.admin_id
+      LEFT JOIN categories c ON n.category_id = c.category_id
+      WHERE LOWER(n.slug) = LOWER($1) AND n.status = 'published'
+      LIMIT 1
+    `;
+
+    const result = await pool.query(articleQuery, [slug]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Article not found'
+      });
+    }
+
+    const article = result.rows[0];
+
+    const imagesQuery = `
+      SELECT
+        image_url, image_caption, alt_text, is_featured, display_order,
+        storage_provider, cloudflare_id, width, height, mime_type
+      FROM news_images
+      WHERE news_id = $1
+      ORDER BY
+        CASE WHEN is_featured = true THEN 0 ELSE 1 END,
+        display_order ASC NULLS LAST,
+        image_id ASC
+    `;
+
+    const mediaQuery = `
+      SELECT
+        platform, post_type, post_url, embed_code, embed_html,
+        author_name, author_handle, author_avatar_url,
+        COALESCE(caption, post_text) as caption,
+        display_order, is_featured, show_full_embed, auto_embed,
+        thumbnail_url, post_date, duration,
+        likes_count, comments_count, views_count,
+        oembed_url, oembed_data
+      FROM news_social_media
+      WHERE news_id = $1
+      ORDER BY
+        CASE WHEN is_featured = true THEN 0 ELSE 1 END,
+        display_order ASC NULLS LAST,
+        social_media_id ASC
+    `;
+
+    const relatedQuery = `
+      SELECT
+        n.news_id, n.title, n.slug, n.image_url, n.excerpt,
+        n.published_at, n.reading_time, n.views, n.likes_count,
+        COALESCE(a.first_name, 'VybesTribe') as first_name,
+        COALESCE(a.last_name, 'Editor') as last_name,
+        c.name as category_name,
+        c.slug as category_slug
+      FROM news n
+      LEFT JOIN admins a ON n.author_id = a.admin_id
+      LEFT JOIN categories c ON n.category_id = c.category_id
+      WHERE n.category_id = $1
+        AND n.news_id != $2
+        AND n.status = 'published'
+      ORDER BY n.published_at DESC
+      LIMIT 20
+    `;
+
+    const [imagesResult, mediaResult, relatedResult] = await Promise.all([
+      pool.query(imagesQuery, [article.news_id]),
+      pool.query(mediaQuery, [article.news_id]),
+      pool.query(relatedQuery, [article.category_id, article.news_id])
+    ]);
+
+    const processedImages = imagesResult.rows.map((img, idx) => ({
+      image_url: img.image_url,
+      image_caption: img.image_caption,
+      alt_text: img.alt_text,
+      is_featured: img.is_featured,
+      position: img.is_featured ? 0 : (img.display_order || idx + 1),
+      storage_provider: img.storage_provider,
+      cloudflare_id: img.cloudflare_id,
+      width: img.width,
+      height: img.height,
+      mime_type: img.mime_type
+    }));
+
+    const processedMedia = mediaResult.rows.map((item, idx) => ({
+      kind: classifyMediaKind(item.platform, item.post_type),
+      video_url: item.post_url,
+      platform: (item.platform || 'unknown').toLowerCase(),
+      post_type: item.post_type,
+      embed_code: item.embed_code || item.embed_html,
+      caption: item.caption,
+      position: item.is_featured ? 1 : (item.display_order || idx + 2),
+      is_featured: item.is_featured,
+      show_full_embed: item.show_full_embed,
+      auto_embed: item.auto_embed,
+      thumbnail_url: item.thumbnail_url,
+      author_name: item.author_name,
+      author_handle: item.author_handle,
+      post_date: item.post_date,
+      duration: item.duration,
+      likes_count: item.likes_count,
+      comments_count: item.comments_count,
+      views_count: item.views_count,
+      oembed_url: item.oembed_url,
+      oembed_data: item.oembed_data
+    }));
+
+    const processedRelated = relatedResult.rows.map(rel => ({
+      news_id: rel.news_id,
+      title: rel.title,
+      slug: rel.slug,
+      excerpt: rel.excerpt,
+      image_url: rel.image_url,
+      published_at: rel.published_at,
+      reading_time: rel.reading_time,
+      views: rel.views,
+      likes_count: rel.likes_count,
+      first_name: rel.first_name,
+      last_name: rel.last_name,
+      category_name: rel.category_name,
+      category_slug: rel.category_slug
+    }));
+
+    pool.query(
+      'UPDATE news SET views = COALESCE(views, 0) + 1 WHERE news_id = $1',
+      [article.news_id]
+    ).catch(err => console.error('[API] View increment error:', err));
+
+    const tagsArray = article.tags
+      ? article.tags.split(',').map(tag => tag.trim()).filter(Boolean)
+      : [];
+    const keywordsArray = article.seo_keywords
+      ? article.seo_keywords.split(',').map(k => k.trim()).filter(Boolean)
+      : [];
+
+    const responseData = {
+      success: true,
+      article: {
+        news_id: article.news_id,
+        title: article.title,
+        content: article.content,
+        excerpt: article.excerpt,
+        slug: article.slug,
+        image_url: article.image_url,
+        status: article.status,
+        reading_time: article.reading_time,
+        views: (article.views || 0) + 1,
+        likes_count: article.likes_count,
+        comments_count: article.comments_count,
+        share_count: article.share_count,
+        published_at: article.published_at,
+        updated_at: article.updated_at,
+        tags: tagsArray,
+        seo_keywords: keywordsArray,
+        meta_description: article.meta_description,
+        images: processedImages,
+        media: processedMedia,
+        first_name: article.first_name,
+        last_name: article.last_name,
+        author_id: article.author_id,
+        author_name: `${article.first_name} ${article.last_name}`,
+        category_id: article.category_id,
+        category_name: article.category_name,
+        category_slug: article.category_slug,
+        category_color: article.category_color,
+        category_icon: article.category_icon,
+        promotions: {
+          featured: article.featured_tier !== null,
+          featured_tier: article.featured_tier,
+          featured_until: article.featured_until,
+          breaking: article.breaking_level !== null,
+          breaking_level: article.breaking_level,
+          breaking_until: article.breaking_until,
+          pinned: article.pin_type !== null,
+          pin_type: article.pin_type,
+          pin_until: article.pin_until,
+          editor_pick: article.editor_pick
+        }
+      },
+      related_articles: processedRelated
+    };
+
+    return res.json(responseData);
+
+  } catch (error) {
+    console.error('[API] ERROR:', error.message);
+    console.error('[API] Stack:', error.stack);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+  } catch (error) {
+    console.error("[API] Unhandled error:", error);
+    return res.status(500).json({ success: false, message: "Internal server error" });
+  }
+  } catch (error) {
+    console.error("[API] Unhandled error:", error);
+    return res.status(500).json({ success: false, message: "Internal server error" });
+  }
+});
+
+router.post('/:slug/view', async (req, res) => {
+  try {
+    const pool = getPool();
+    const { slug } = req.params;
+
+    const result = await pool.query(`
+      UPDATE news
+      SET views = COALESCE(views, 0) + 1, updated_at = NOW()
+      WHERE LOWER(slug) = LOWER($1) AND status = 'published'
+      RETURNING news_id, views, title
+    `, [slug]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Article not found' });
+    }
+
+    return res.json({
+      success: true,
+      news_id: result.rows[0].news_id,
+      views: result.rows[0].views
+    });
+
+  } catch (error) {
+    console.error('[API] View tracking error:', error);
+    return res.json({ success: false, views: 0 });
+  }
+});
+
+router.post('/:slug/like', async (req, res) => {
+  try {
+    const pool = getPool();
+    const { slug } = req.params;
+    const { client_id } = req.body;
+
+    if (!client_id) {
+      return res.status(400).json({ success: false, message: 'Client ID required' });
+    }
+
+    const articleResult = await pool.query(
+      'SELECT news_id, likes_count FROM news WHERE LOWER(slug) = LOWER($1) AND status = \'published\'',
+      [slug]
+    );
+
+    if (articleResult.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Article not found' });
+    }
+
+    const { news_id, likes_count } = articleResult.rows[0];
+
+    const existingLike = await pool.query(
+      'SELECT reaction_id FROM news_reactions WHERE news_id = $1 AND ip_address = $2::inet',
+      [news_id, client_id]
+    );
+
+    if (existingLike.rows.length > 0) {
+      await pool.query('DELETE FROM news_reactions WHERE reaction_id = $1', [existingLike.rows[0].reaction_id]);
+      await pool.query('UPDATE news SET likes_count = GREATEST(COALESCE(likes_count, 0) - 1, 0) WHERE news_id = $1', [news_id]);
+
+      return res.json({ success: true, liked: false, likes_count: Math.max((likes_count || 0) - 1, 0) });
+    } else {
+      await pool.query(
+        'INSERT INTO news_reactions (news_id, ip_address, reaction_type) VALUES ($1, $2::inet, \'like\')',
+        [news_id, client_id]
+      );
+      await pool.query('UPDATE news SET likes_count = COALESCE(likes_count, 0) + 1 WHERE news_id = $1', [news_id]);
+
+      return res.json({ success: true, liked: true, likes_count: (likes_count || 0) + 1 });
+    }
+
+  } catch (error) {
+    console.error('[API] Like error:', error);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+module.exports = router;

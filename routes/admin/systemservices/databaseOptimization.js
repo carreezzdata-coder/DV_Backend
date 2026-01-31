@@ -1,0 +1,232 @@
+// backend/routes/admin/databaseOptimization.js
+
+// backend/routes/admin/systemservices/databaseOptimization.js
+const express = require('express');
+const router = express.Router();
+const { getPool } = require('../../../config/db'); 
+
+const { FRONTEND_URL, CLIENT_URL, ADMIN_URL, API_DOMAIN, ALLOWED_ORIGINS, isOriginAllowed } = require('../../../config/frontendconfig');
+
+router.get('/stats', async (req, res) => {
+  try {
+    const pool = getPool();
+    
+    const [tableStats, indexStats, performanceStats, connectionStats] = await Promise.all([
+      pool.query(`
+        SELECT 
+          schemaname,
+          relname as table_name,
+          n_live_tup as row_count,
+          n_dead_tup as dead_rows,
+          n_mod_since_analyze as modifications,
+          last_vacuum,
+          last_autovacuum,
+          last_analyze,
+          last_autoanalyze,
+          pg_size_pretty(pg_total_relation_size(schemaname||'.'||relname)) as total_size
+        FROM pg_stat_user_tables
+        ORDER BY n_live_tup DESC
+        LIMIT 20
+      `),
+      
+      pool.query(`
+        SELECT 
+          schemaname,
+          relname as table_name,
+          indexrelname as index_name,
+          idx_scan as index_scans,
+          idx_tup_read as tuples_read,
+          idx_tup_fetch as tuples_fetched,
+          pg_size_pretty(pg_relation_size(indexrelid)) as index_size
+        FROM pg_stat_user_indexes
+        ORDER BY idx_scan DESC
+        LIMIT 20
+      `),
+      
+      pool.query(`
+        SELECT 
+          datname as database_name,
+          numbackends as connections,
+          xact_commit as transactions_committed,
+          xact_rollback as transactions_rolled_back,
+          blks_read as blocks_read,
+          blks_hit as blocks_hit,
+          tup_returned as tuples_returned,
+          tup_fetched as tuples_fetched,
+          tup_inserted as tuples_inserted,
+          tup_updated as tuples_updated,
+          tup_deleted as tuples_deleted,
+          conflicts,
+          temp_files,
+          temp_bytes,
+          deadlocks
+        FROM pg_stat_database 
+        WHERE datname = current_database()
+      `),
+
+      pool.query(`
+        SELECT 
+          count(*) as total_connections,
+          count(*) FILTER (WHERE state = 'active') as active_connections,
+          count(*) FILTER (WHERE state = 'idle') as idle_connections,
+          count(*) FILTER (WHERE state = 'idle in transaction') as idle_in_transaction
+        FROM pg_stat_activity
+        WHERE datname = current_database()
+      `)
+    ]);
+
+    const perfRow = performanceStats.rows[0];
+    const cacheHitRatio = perfRow.blocks_read + perfRow.blocks_hit > 0
+      ? ((perfRow.blocks_hit / (perfRow.blocks_read + perfRow.blocks_hit)) * 100).toFixed(2)
+      : 0;
+
+    return res.json({
+      success: true,
+      stats: {
+        tables: tableStats.rows,
+        indexes: indexStats.rows,
+        performance: {
+          ...perfRow,
+          cacheHitRatio: `${cacheHitRatio}%`
+        },
+        connections: connectionStats.rows[0],
+        summary: {
+          totalTables: tableStats.rows.length,
+          totalIndexes: indexStats.rows.length,
+          cacheHitRatio: `${cacheHitRatio}%`,
+          activeConnections: parseInt(connectionStats.rows[0].active_connections)
+        }
+      },
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Error fetching database stats:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to fetch database statistics',
+      message: error.message
+    });
+  }
+});
+
+router.post('/vacuum', async (req, res) => {
+  try {
+    const pool = getPool();
+    const { table, analyze, full } = req.body;
+    
+    let query = 'VACUUM';
+    if (full) query = 'VACUUM FULL';
+    if (analyze) query += ' ANALYZE';
+    if (table) query += ` ${table}`;
+    
+    await pool.query(query);
+    
+    return res.json({
+      success: true,
+      message: `${query} operation completed successfully`,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error running VACUUM:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'VACUUM operation failed',
+      message: error.message
+    });
+  }
+});
+
+router.post('/reindex', async (req, res) => {
+  try {
+    const pool = getPool();
+    const { index, table } = req.body;
+    
+    let query;
+    if (index) {
+      query = `REINDEX INDEX ${index}`;
+    } else if (table) {
+      query = `REINDEX TABLE ${table}`;
+    } else {
+      return res.status(400).json({
+        success: false,
+        error: 'Please specify either index or table to reindex'
+      });
+    }
+    
+    await pool.query(query);
+    
+    return res.json({
+      success: true,
+      message: 'Reindex operation completed successfully',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error running REINDEX:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Reindex operation failed',
+      message: error.message
+    });
+  }
+});
+
+router.post('/analyze', async (req, res) => {
+  try {
+    const pool = getPool();
+    const { table } = req.body;
+    
+    const query = table ? `ANALYZE ${table}` : 'ANALYZE';
+    await pool.query(query);
+    
+    return res.json({
+      success: true,
+      message: `ANALYZE ${table || 'all tables'} completed successfully`,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error running ANALYZE:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'ANALYZE operation failed',
+      message: error.message
+    });
+  }
+});
+
+router.get('/slow-queries', async (req, res) => {
+  try {
+    const pool = getPool();
+    
+    const slowQueries = await pool.query(`
+      SELECT 
+        query,
+        calls,
+        total_time,
+        mean_time,
+        max_time,
+        stddev_time
+      FROM pg_stat_statements
+      WHERE query NOT LIKE '%pg_stat_statements%'
+      ORDER BY mean_time DESC
+      LIMIT 20
+    `).catch(() => ({ rows: [] }));
+
+    return res.json({
+      success: true,
+      slowQueries: slowQueries.rows,
+      message: slowQueries.rows.length === 0 
+        ? 'pg_stat_statements extension not enabled' 
+        : undefined
+    });
+  } catch (error) {
+    console.error('Error fetching slow queries:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to fetch slow queries',
+      message: error.message
+    });
+  }
+});
+
+module.exports = router;

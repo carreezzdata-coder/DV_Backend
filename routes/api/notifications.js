@@ -1,0 +1,323 @@
+const express = require('express');
+const { getPool } = require('../../config/db');
+
+const { FRONTEND_URL, CLIENT_URL, ADMIN_URL, API_DOMAIN, ALLOWED_ORIGINS, isOriginAllowed } = require('../../config/frontendconfig');
+
+const router = express.Router();
+
+const getImageUrl = (imageUrl) => {
+  if (!imageUrl) return null;
+  if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) return imageUrl;
+  const r2Url = process.env.R2_PUBLIC_URL;
+  if (r2Url) {
+    const cleanUrl = r2Url.endsWith('/') ? r2Url.slice(0, -1) : r2Url;
+    const cleanImage = imageUrl.startsWith('/') ? imageUrl.substring(1) : imageUrl;
+    return `${cleanUrl}/${cleanImage}`;
+  }
+  return imageUrl.startsWith('/') ? imageUrl : `/uploads/images/${imageUrl}`;
+};
+
+router.get('/', async (req, res) => {
+  res.set({
+    'Cache-Control': 'private, max-age=30, must-revalidate',
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'X-XSS-Protection': '1; mode=block'
+  });
+
+  try {
+    const pool = getPool();
+    const { limit = '20', unread_only } = req.query;
+    const userId = req.session?.user?.user_id;
+
+    if (!userId) {
+      return res.json({
+        success: true,
+        notifications: [],
+        total: 0,
+        unread_count: 0
+      });
+    }
+
+    const searchLimit = Math.min(100, Math.max(1, parseInt(limit)));
+    let whereClause = 'WHERE un.user_id = $1';
+    const queryParams = [userId];
+    let paramIndex = 2;
+
+    if (unread_only === 'true') {
+      whereClause += ' AND un.is_read = false';
+    }
+
+    queryParams.push(searchLimit);
+
+    const notificationsQuery = `
+      SELECT
+        un.notification_id,
+        un.title,
+        un.message,
+        un.type,
+        un.link,
+        un.is_read,
+        un.created_at,
+        CASE
+          WHEN un.link LIKE '/article/%' THEN (
+            SELECT json_build_object(
+              'news_id', n.news_id,
+              'title', n.title,
+              'slug', n.slug,
+              'image_url', COALESCE(ni.image_url, n.image_url),
+              'category_name', c.name,
+              'published_at', n.published_at
+            )
+            FROM news n
+            LEFT JOIN categories c ON n.category_id = c.category_id
+            LEFT JOIN LATERAL (
+              SELECT image_url FROM news_images
+              WHERE news_id = n.news_id AND is_featured = true
+              LIMIT 1
+            ) ni ON true
+            WHERE n.slug = SUBSTRING(un.link FROM 10)
+            LIMIT 1
+          )
+          ELSE NULL
+        END as article_data
+      FROM user_notifications un
+      ${whereClause}
+      ORDER BY un.created_at DESC
+      LIMIT $${paramIndex}
+    `;
+
+    const countQuery = `
+      SELECT
+        COUNT(*) as total,
+        COUNT(*) FILTER (WHERE is_read = false) as unread_count
+      FROM user_notifications
+      WHERE user_id = $1
+    `;
+
+    const [notificationsResult, countResult] = await Promise.all([
+      pool.query(notificationsQuery, queryParams),
+      pool.query(countQuery, [userId])
+    ]);
+
+    const processedNotifications = notificationsResult.rows.map(notif => ({
+      ...notif,
+      article_data: notif.article_data ? {
+        ...notif.article_data,
+        image_url: getImageUrl(notif.article_data.image_url)
+      } : null,
+      time_ago: getTimeAgo(notif.created_at)
+    }));
+
+    return res.json({
+      success: true,
+      notifications: processedNotifications,
+      total: parseInt(countResult.rows[0].total),
+      unread_count: parseInt(countResult.rows[0].unread_count)
+    });
+
+  } catch (error) {
+    console.error('Get notifications error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch notifications',
+      error: error.message
+    });
+  }
+});
+
+router.post('/:id/read', async (req, res) => {
+  res.set({
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff'
+  });
+
+  try {
+    const pool = getPool();
+    const { id } = req.params;
+    const userId = req.session?.user?.user_id;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Unauthorized'
+      });
+    }
+
+    const updateQuery = `
+      UPDATE user_notifications
+      SET is_read = true
+      WHERE notification_id = $1 AND user_id = $2
+      RETURNING notification_id, is_read
+    `;
+
+    const result = await pool.query(updateQuery, [id, userId]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Notification not found'
+      });
+    }
+
+    const countResult = await pool.query(
+      'SELECT COUNT(*) as unread_count FROM user_notifications WHERE user_id = $1 AND is_read = false',
+      [userId]
+    );
+
+    return res.json({
+      success: true,
+      message: 'Notification marked as read',
+      unread_count: parseInt(countResult.rows[0].unread_count)
+    });
+
+  } catch (error) {
+    console.error('Mark notification as read error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to mark notification as read'
+    });
+  }
+});
+
+router.post('/read-all', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+
+  try {
+    const pool = getPool();
+    const userId = req.session?.user?.user_id;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Unauthorized'
+      });
+    }
+
+    const updateQuery = `
+      UPDATE user_notifications
+      SET is_read = true
+      WHERE user_id = $1 AND is_read = false
+      RETURNING notification_id
+    `;
+
+    const result = await pool.query(updateQuery, [userId]);
+
+    return res.json({
+      success: true,
+      message: `Marked ${result.rows.length} notifications as read`,
+      count: result.rows.length
+    });
+
+  } catch (error) {
+    console.error('Mark all as read error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to mark all notifications as read'
+    });
+  }
+});
+
+router.delete('/:id', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+
+  try {
+    const pool = getPool();
+    const { id } = req.params;
+    const userId = req.session?.user?.user_id;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Unauthorized'
+      });
+    }
+
+    const deleteQuery = `
+      DELETE FROM user_notifications
+      WHERE notification_id = $1 AND user_id = $2
+      RETURNING notification_id
+    `;
+
+    const result = await pool.query(deleteQuery, [id, userId]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Notification not found'
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Notification deleted'
+    });
+
+  } catch (error) {
+    console.error('Delete notification error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to delete notification'
+    });
+  }
+});
+
+router.delete('/clear-all', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+
+  try {
+    const pool = getPool();
+    const userId = req.session?.user?.user_id;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Unauthorized'
+      });
+    }
+
+    const deleteQuery = `
+      DELETE FROM user_notifications
+      WHERE user_id = $1
+      RETURNING notification_id
+    `;
+
+    const result = await pool.query(deleteQuery, [userId]);
+
+    return res.json({
+      success: true,
+      message: `Deleted ${result.rows.length} notifications`,
+      count: result.rows.length
+    });
+
+  } catch (error) {
+    console.error('Clear all notifications error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to clear all notifications'
+    });
+  }
+});
+
+function getTimeAgo(date) {
+  const seconds = Math.floor((new Date() - new Date(date)) / 1000);
+  const intervals = {
+    year: 31536000,
+    month: 2592000,
+    week: 604800,
+    day: 86400,
+    hour: 3600,
+    minute: 60
+  };
+
+  for (const [unit, secondsInUnit] of Object.entries(intervals)) {
+    const interval = Math.floor(seconds / secondsInUnit);
+    if (interval >= 1) {
+      return `${interval} ${unit}${interval > 1 ? 's' : ''} ago`;
+    }
+  }
+
+  return 'Just now';
+}
+
+module.exports = router;

@@ -1,0 +1,510 @@
+{
+  "timestamp": "2025-12-21T08:27:09.874Z",
+  "summary": {
+    "total": 50,
+    "applied": 50,
+    "skipped": 0,
+    "failed": 0
+  },
+  "details": [
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\services\\cacheOptimization.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\cacheOptimization.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\services\\cleanupScheduler.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\cleanupScheduler.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\services\\cloudflareService.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\cloudflareService.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\services\\geoCdnService.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\geoCdnService.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\services\\geoService.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\geoService.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\services\\geoTrackingService.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\geoTrackingService.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\middleware\\adminAuth.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\adminAuth.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\middleware\\clientAuth.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\clientAuth.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\middleware\\geo.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\geo.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\middleware\\geoService.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\geoService.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\admin\\admin.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\admin.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\admin\\analytics.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\analytics.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\admin\\auth.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\auth.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\admin\\categories.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\categories.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\admin\\chat.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\chat.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\admin\\createposts.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\createposts.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\admin\\edit.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\edit.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\admin\\geo.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\geo.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\admin\\news.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\news.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\admin\\quotes.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\quotes.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\admin\\retrieveposts.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\retrieveposts.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\admin\\servicesoverview.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\servicesoverview.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\admin\\systemMonitoring.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\systemMonitoring.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\admin\\systemServices.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\systemServices.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\admin\\upload.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\upload.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\admin\\user.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\user.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\admin\\userprofile.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\userprofile.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\admin\\userroles.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\userroles.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\api\\ads.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\ads.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\api\\articles.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\articles.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\api\\categories.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\categories.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\api\\category-groups.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\category-groups.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\api\\client-index.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\client-index.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\api\\clientquotes.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\clientquotes.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\api\\cookies.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\cookies.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\api\\fetchall.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\fetchall.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\api\\footer-categories.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\footer-categories.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\api\\geo.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\geo.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\api\\interactions.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\interactions.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\api\\news.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\news.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\api\\notifications.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\notifications.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\api\\search.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\search.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\client\\auth.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\auth.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\client\\client.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\client.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\public\\content.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\content.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\test-routes.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\test-routes.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\config\\db.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\db.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\config\\imagesUpload.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\imagesUpload.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\app.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\app.js.backup",
+      "status": "success"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\server.js",
+      "fixes": [
+        "Normalized line endings to LF",
+        "Removed trailing whitespace",
+        "Added newline at end of file"
+      ],
+      "backup": "C:\\Projects\\Daily Vaibe\\backend\\backups\\2025-12-21\\server.js.backup",
+      "status": "success"
+    }
+  ]
+}

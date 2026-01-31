@@ -1,0 +1,115 @@
+"C:\Program Files\PostgreSQL\16\bin\psql.exe" -U postgres -h localhost -p 5432 -d dailyvaibe -f 
+"C:\Projects\DAILY VAIBE\backend\config\dailyvaibe4.sql"
+
+
+POSTGRESQL PATHS & COMMANDS
+PostgreSQL Installation Path:
+text
+C:\Program Files\PostgreSQL\18\bin\
+PostgreSQL Commands (Run in CMD as Admin):
+cmd
+# Start PostgreSQL Server
+net start postgresql-x64-18
+
+# Stop PostgreSQL Server  
+net stop postgresql-x64-18
+
+# Check if running
+netstat -an | findstr :5432
+
+# Connect to PostgreSQL Shell
+"C:\Program Files\PostgreSQL\18\bin\psql.exe" -U postgres -d dailyvaibe
+======================================================================================================================
+BACKEND PATHS & COMMANDS
+======================================================================================================================
+Backend Path:
+text
+C:\Projects\DAILY VAIBE\backend\
+Backend Commands:
+cmd
+# Navigate to backend
+cd C:\Projects\DAILY VAIBE\backend
+npm run dev
+
+# Production mode
+npm start
+
+# Build for production
+npm run build
+Backend .env file location:
+FOR EXPORTING/DUMPING DATA:
+1. Dump entire database:
+cmd
+"C:\Program Files\PostgreSQL\18\bin\pg_dump.exe" -U postgres -d dailyvaibe -f "C:\Projects\DAILY VAIBE\backend\config\EntireSchemaDump1.sql"
+cmd
+"C:\Program Files\PostgreSQL\18\bin\pg_dump.exe" -U postgres -d dailyvaibe -s -f "C:\Projects\DAILY VAIBE\backup\dailyvaibe_schema.sql"
+3. Dump data only (no schema):
+cmd
+"C:\Program Files\PostgreSQL\18\bin\pg_dump.exe" -U postgres -d dailyvaibe -a -f "C:\Projects\DAILY VAIBE\backup\dailyvaibe_data.sql"
+
+
+======================================================================================================================
+C:\Projects\DAILY VAIBE\backend\.env
+Backend will run on: http://localhost:5000
+
+
+
+======================================================================================================================
+STARTUP SEQUENCE (Manual - No Scripts)
+======================================================================================================================
+======================================================================================================================
+Step 1: Start PostgreSQL Server
+cmd
+# Open CMD as Administrator
+net start postgresql-x64-18
+
+netstat -an | findstr :5432
+Step 2: Start Backend Server
+cmd
+=======================================
+cd C:\Projects\DAILY VAIBE\backend
+npm run dev
+
+cd C:\Projects\DAILY VAIBE\frontend
+npm run dev
+=====================================
+cd C:\Projects\DAILY VAIBE\backend
+npm run build
+
+cd C:\Projects\DAILY VAIBE\frontend
+npm run build
+=====================================
+
+npm run build >> build.txt 2>&1
+===========================================================================================================
+ALIGNMENT
+============================================================================================================
+ADMIN
+user
+---- Align Edit routes with CreatePosts, fully
+--- Fix Delete and Disapprove to start working immediately. 
+Client
+- yanghasla has optimization route, 
+START BUILDING. 
+
+Ewkimani010936
+
+=======================================================
+# Step 1: Go to your backend folder
+cd "C:\Projects\DAILY VAIBE\backend"
+
+# Step 2: Initialize Git
+git init
+
+# Step 3: Add all files
+git add .
+
+# Step 4: Commit
+git commit -m "Initial backend commit"
+
+# Step 5: Connect to GitHub repository
+git remote add origin https://github.com/carreezzdata-coder/dailyvaibez.git
+
+# Step 6: Push to GitHub
+git push -u origin main
+=========================================================

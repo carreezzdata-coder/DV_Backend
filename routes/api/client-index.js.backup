@@ -1,0 +1,287 @@
+// routes/client/client-index.js
+const express = require('express');
+const router = express.Router();
+
+// Import all client route modules
+const categoriesRouter = require('./categories');
+const categoryRouter = require('./category');
+const categoryGroupsRouter = require('./category-groups');
+const homeRouter = require('./home');
+const articleRouter = require('./article');
+const articlesRouter = require('./articles');
+const footerCategoriesRouter = require('./footer-categories');
+const searchRouter = require('./search');
+const fetchallRouter = require('./fetchall');
+const geoRouter = require('./geo');
+const cookiesRouter = require('./cookies');
+const interactionsRouter = require('./interactions');
+const notificationsRouter = require('./notifications');
+
+// Cache control middleware for static/rarely changing data
+const longCache = (req, res, next) => {
+  res.set({
+    'Cache-Control': 'public, max-age=600, s-maxage=1800, stale-while-revalidate=86400',
+    'CDN-Cache-Control': 'max-age=1800',
+    'Vary': 'Accept-Encoding'
+  });
+  next();
+};
+
+// Cache control for frequently changing data
+const shortCache = (req, res, next) => {
+  res.set({
+    'Cache-Control': 'public, max-age=60, s-maxage=120, stale-while-revalidate=600',
+    'CDN-Cache-Control': 'max-age=120',
+    'Vary': 'Accept-Encoding'
+  });
+  next();
+};
+
+// No cache for user-specific or real-time data
+const noCache = (req, res, next) => {
+  res.set({
+    'Cache-Control': 'no-store, no-cache, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0'
+  });
+  next();
+};
+
+// ============= MAIN CONTENT ROUTES =============
+
+// Home page data
+router.use('/home', shortCache, homeRouter);
+
+// Article routes (single article)
+router.use('/article', articleRouter);
+
+// Articles routes (multiple articles by slug)
+router.use('/articles', articlesRouter);
+
+// ============= CATEGORY ROUTES =============
+
+// Categories listing (all categories)
+router.use('/categories', longCache, categoriesRouter);
+
+// Single category data and news
+router.use('/category', categoryRouter);
+
+// Category groups (grouped categories like World, Counties, etc.)
+router.use('/category-groups', longCache, categoryGroupsRouter);
+
+// Footer categories (organized for footer display)
+router.use('/footer-categories', longCache, footerCategoriesRouter);
+
+// ============= SEARCH & DISCOVERY =============
+
+// Search functionality
+router.use('/search', searchRouter);
+
+// Fetchall (unified data fetching endpoint)
+router.use('/fetchall', fetchallRouter);
+
+// ============= USER INTERACTION ROUTES =============
+
+// User interactions (likes, views, shares, etc.)
+router.use('/interactions', noCache, interactionsRouter);
+
+// User notifications
+router.use('/notifications', noCache, notificationsRouter);
+
+// ============= TRACKING & ANALYTICS =============
+
+// Geolocation tracking
+router.use('/geo', geoRouter);
+
+// Cookie consent tracking
+router.use('/cookies', noCache, cookiesRouter);
+
+// ============= UTILITY ROUTES =============
+
+// Health check endpoint
+router.get('/health', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Client API routes active',
+    timestamp: new Date().toISOString(),
+    routes: {
+      home: '/client/home',
+      article: '/client/article/:slug',
+      articles: '/client/articles/:slug',
+      categories: '/client/categories',
+      category: '/client/category/:slug',
+      categoryGroups: '/client/category-groups',
+      footerCategories: '/client/footer-categories',
+      search: '/client/search',
+      fetchall: '/client/fetchall',
+      interactions: '/client/interactions',
+      notifications: '/client/notifications',
+      geo: '/client/geo',
+      cookies: '/client/cookies'
+    }
+  });
+});
+
+// API documentation endpoint
+router.get('/docs', (req, res) => {
+  res.json({
+    success: true,
+    title: 'Daily Vaibe Client API Documentation',
+    version: '1.0.0',
+    baseUrl: '/client',
+    endpoints: {
+      home: {
+        path: '/home',
+        method: 'GET',
+        description: 'Get homepage data including headlines, trending, latest articles',
+        cache: 'Short (60s)',
+        response: {
+          sessionData: 'object',
+          headlines: 'array',
+          trending: 'array',
+          latest: 'array',
+          categories: 'array'
+        }
+      },
+      article: {
+        path: '/article/:slug',
+        method: 'GET',
+        description: 'Get single article by slug with related articles',
+        params: { slug: 'Article URL slug' },
+        cache: 'Medium (300s)',
+        response: {
+          article: 'object',
+          related_articles: 'array'
+        }
+      },
+      categories: {
+        path: '/categories',
+        method: 'GET',
+        description: 'Get all active categories with article counts',
+        cache: 'Long (600s)',
+        response: {
+          categories: 'array'
+        }
+      },
+      categoryNews: {
+        path: '/category/:slug/news',
+        method: 'GET',
+        description: 'Get news articles for a specific category',
+        params: {
+          slug: 'Category slug',
+          page: 'Page number (optional)',
+          limit: 'Items per page (optional, max 50)'
+        },
+        cache: 'Short (180s)',
+        response: {
+          category: 'object',
+          news: 'array',
+          pagination: 'object'
+        }
+      },
+      search: {
+        path: '/search',
+        method: 'GET',
+        description: 'Search articles by query',
+        params: {
+          q: 'Search query',
+          limit: 'Results limit (optional, max 50)',
+          categories: 'Comma-separated category slugs (optional)',
+          sort: 'Sort by: relevance, recent, popular, trending (optional)'
+        },
+        cache: 'Medium (180s)',
+        response: {
+          results: 'array',
+          total: 'number',
+          pagination: 'object'
+        }
+      },
+      footerCategories: {
+        path: '/footer-categories',
+        method: 'GET',
+        description: 'Get organized category groups for footer display',
+        cache: 'Long (600s)',
+        response: {
+          groups: 'object',
+          all_categories: 'array',
+          total_categories: 'number'
+        }
+      },
+      interactions: {
+        path: '/interactions/track',
+        method: 'POST',
+        description: 'Track user interactions (views, likes, shares)',
+        body: {
+          news_id: 'number (required)',
+          session_id: 'string (required)',
+          interaction_type: 'string (required): view, like, share, comment',
+          county: 'string (optional)',
+          town: 'string (optional)',
+          metadata: 'object (optional)'
+        },
+        cache: 'None',
+        response: {
+          success: 'boolean',
+          counts: 'object'
+        }
+      },
+      geo: {
+        path: '/geo/current',
+        method: 'GET',
+        description: 'Get current user geolocation data',
+        cache: 'None',
+        response: {
+          location: {
+            county: 'string',
+            town: 'string',
+            category: 'string'
+          }
+        }
+      }
+    },
+    notes: [
+      'All endpoints return JSON responses',
+      'Cache headers are set for optimal CDN performance',
+      'User-specific data (notifications, interactions) are not cached',
+      'Rate limiting may apply to some endpoints',
+      'Pagination is available on list endpoints with page and limit params'
+    ]
+  });
+});
+
+// Fallback for undefined client routes
+router.use('*', (req, res) => {
+  res.status(404).json({
+    success: false,
+    message: 'Client API endpoint not found',
+    path: req.originalUrl,
+    availableRoutes: [
+      '/client/home',
+      '/client/article/:slug',
+      '/client/categories',
+      '/client/category/:slug',
+      '/client/search',
+      '/client/footer-categories',
+      '/client/health',
+      '/client/docs'
+    ],
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Error handling middleware
+router.use((err, req, res, next) => {
+  console.error('Client API Error:', err);
+
+  res.status(err.status || 500).json({
+    success: false,
+    message: err.message || 'Internal server error',
+    error: process.env.NODE_ENV === 'development' ? {
+      stack: err.stack,
+      details: err
+    } : undefined,
+    timestamp: new Date().toISOString()
+  });
+});
+
+module.exports = router;

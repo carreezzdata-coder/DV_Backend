@@ -1,0 +1,317 @@
+const express = require('express');
+const { getPool } = require('../../config/db');
+
+const { FRONTEND_URL, CLIENT_URL, ADMIN_URL, API_DOMAIN, ALLOWED_ORIGINS, isOriginAllowed } = require('../../config/frontendconfig');
+
+const getImageUrl = (imageUrl) => {
+  if (!imageUrl) return null;
+  if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) return imageUrl;
+  const cleanPath = imageUrl.startsWith('/') ? imageUrl.substring(1) : imageUrl;
+  if (process.env.NODE_ENV === 'development') return `http://localhost:5000/${cleanPath}`;
+  const r2Url = process.env.R2_PUBLIC_URL;
+  if (r2Url) {
+    const cleanUrl = r2Url.endsWith('/') ? r2Url.slice(0, -1) : r2Url;
+    return `${cleanUrl}/${cleanPath}`;
+  }
+  return `https://www.dailyvaibe.com/${cleanPath}`;
+};
+
+const normalizeArticle = (article) => ({
+  news_id: article.news_id,
+  title: article.title,
+  excerpt: article.excerpt || article.meta_description || '',
+  slug: article.slug,
+  image_url: getImageUrl(article.image_url),
+  published_at: article.published_at,
+  reading_time: article.reading_time || 3,
+  views: article.views || 0,
+  likes_count: article.likes_count || 0,
+  comments_count: article.comments_count || 0,
+  share_count: article.share_count || 0,
+  first_name: article.first_name || 'Daily Vaibe',
+  last_name: article.last_name || 'Editor',
+  category_name: article.category_name,
+  category_slug: article.category_slug,
+  category_color: article.category_color,
+  meta_description: article.meta_description,
+  tags: article.tags ? article.tags.split(',').map(t => t.trim()).filter(Boolean) : []
+});
+
+const pinnedRouter = express.Router();
+pinnedRouter.get('/', async (req, res) => {
+  res.set({
+    'Cache-Control': 'public, max-age=120, s-maxage=240, stale-while-revalidate=480',
+    'CDN-Cache-Control': 'max-age=240',
+    'Vary': 'Accept-Encoding'
+  });
+
+  try {
+    const pool = getPool();
+    const page = Math.max(1, parseInt(req.query.page || '1'));
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit || '50')));
+    const offset = (page - 1) * limit;
+
+    const [countResult, newsResult] = await Promise.all([
+      pool.query(`
+        SELECT COUNT(*) as total 
+        FROM pinned_news p
+        INNER JOIN news n ON p.news_id = n.news_id
+        WHERE n.status = 'published' 
+          AND p.manually_removed = false
+          AND (p.ends_at IS NULL OR p.ends_at > CURRENT_TIMESTAMP)
+      `),
+      pool.query(`
+        SELECT
+          n.news_id, n.title, n.excerpt, n.slug, n.image_url, n.published_at,
+          n.reading_time, n.views, n.likes_count, n.comments_count, n.share_count,
+          n.meta_description, n.tags,
+          COALESCE(a.first_name, 'Daily Vaibe') as first_name,
+          COALESCE(a.last_name, 'Editor') as last_name,
+          c.name as category_name, 
+          c.slug as category_slug, 
+          c.color as category_color,
+          p.position as pin_position,
+          p.tier as pin_tier,
+          p.starts_at as pin_started_at,
+          p.ends_at as pin_ends_at
+        FROM pinned_news p
+        INNER JOIN news n ON p.news_id = n.news_id
+        LEFT JOIN admins a ON n.author_id = a.admin_id
+        LEFT JOIN categories c ON n.category_id = c.category_id
+        WHERE n.status = 'published' 
+          AND p.manually_removed = false
+          AND (p.ends_at IS NULL OR p.ends_at > CURRENT_TIMESTAMP)
+        ORDER BY 
+          p.position ASC NULLS LAST,
+          CASE p.tier
+            WHEN 'gold' THEN 1
+            WHEN 'silver' THEN 2
+            WHEN 'bronze' THEN 3
+            ELSE 4
+          END,
+          p.starts_at DESC,
+          n.published_at DESC
+        LIMIT $1 OFFSET $2
+      `, [limit, offset])
+    ]);
+
+    const total = parseInt(countResult.rows[0]?.total || '0');
+    const totalPages = Math.ceil(total / limit);
+
+    return res.json({
+      success: true,
+      news: newsResult.rows.map(article => ({
+        ...normalizeArticle(article),
+        pinned: {
+          position: article.pin_position,
+          tier: article.pin_tier,
+          started_at: article.pin_started_at,
+          ends_at: article.pin_ends_at,
+          emoji: article.pin_tier === 'gold' ? '📌' : 
+                 article.pin_tier === 'silver' ? '📍' : '📎'
+        }
+      })),
+      pagination: {
+        current_page: page,
+        per_page: limit,
+        total_items: total,
+        total_pages: totalPages,
+        has_next: page < totalPages,
+        has_prev: page > 1
+      }
+    });
+  } catch (error) {
+    console.error('[Pinned] Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch pinned news',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+const breakingRouter = express.Router();
+breakingRouter.get('/', async (req, res) => {
+  res.set({
+    'Cache-Control': 'public, max-age=30, s-maxage=60, stale-while-revalidate=120',
+    'CDN-Cache-Control': 'max-age=60',
+    'Vary': 'Accept-Encoding'
+  });
+
+  try {
+    const pool = getPool();
+    const page = Math.max(1, parseInt(req.query.page || '1'));
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit || '50')));
+    const offset = (page - 1) * limit;
+
+    const [countResult, newsResult] = await Promise.all([
+      pool.query(`
+        SELECT COUNT(*) as total 
+        FROM breaking_news b
+        INNER JOIN news n ON b.news_id = n.news_id
+        WHERE n.status = 'published' 
+          AND b.manually_removed = false
+          AND (b.ends_at IS NULL OR b.ends_at > CURRENT_TIMESTAMP)
+      `),
+      pool.query(`
+        SELECT
+          n.news_id, n.title, n.excerpt, n.slug, n.image_url, n.published_at,
+          n.reading_time, n.views, n.likes_count, n.comments_count, n.share_count,
+          n.meta_description, n.tags,
+          COALESCE(a.first_name, 'Daily Vaibe') as first_name,
+          COALESCE(a.last_name, 'Editor') as last_name,
+          c.name as category_name, 
+          c.slug as category_slug, 
+          c.color as category_color,
+          b.priority as breaking_priority,
+          b.starts_at as breaking_started_at,
+          b.ends_at as breaking_ends_at
+        FROM breaking_news b
+        INNER JOIN news n ON b.news_id = n.news_id
+        LEFT JOIN admins a ON n.author_id = a.admin_id
+        LEFT JOIN categories c ON n.category_id = c.category_id
+        WHERE n.status = 'published' 
+          AND b.manually_removed = false
+          AND (b.ends_at IS NULL OR b.ends_at > CURRENT_TIMESTAMP)
+        ORDER BY 
+          CASE b.priority
+            WHEN 'high' THEN 1
+            WHEN 'medium' THEN 2
+            WHEN 'low' THEN 3
+            ELSE 4
+          END,
+          b.starts_at DESC,
+          n.published_at DESC
+        LIMIT $1 OFFSET $2
+      `, [limit, offset])
+    ]);
+
+    const total = parseInt(countResult.rows[0]?.total || '0');
+    const totalPages = Math.ceil(total / limit);
+
+    return res.json({
+      success: true,
+      news: newsResult.rows.map(article => ({
+        ...normalizeArticle(article),
+        breaking: {
+          priority: article.breaking_priority,
+          started_at: article.breaking_started_at,
+          ends_at: article.breaking_ends_at,
+          emoji: article.breaking_priority === 'high' ? '🚨' : 
+                 article.breaking_priority === 'medium' ? '⚡' : '📢'
+        }
+      })),
+      pagination: {
+        current_page: page,
+        per_page: limit,
+        total_items: total,
+        total_pages: totalPages,
+        has_next: page < totalPages,
+        has_prev: page > 1
+      }
+    });
+  } catch (error) {
+    console.error('[Breaking] Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch breaking news',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+const featuredRouter = express.Router();
+featuredRouter.get('/', async (req, res) => {
+  res.set({
+    'Cache-Control': 'public, max-age=120, s-maxage=240, stale-while-revalidate=480',
+    'CDN-Cache-Control': 'max-age=240',
+    'Vary': 'Accept-Encoding'
+  });
+
+  try {
+    const pool = getPool();
+    const page = Math.max(1, parseInt(req.query.page || '1'));
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit || '50')));
+    const offset = (page - 1) * limit;
+
+    const [countResult, newsResult] = await Promise.all([
+      pool.query(`
+        SELECT COUNT(*) as total 
+        FROM featured_news f
+        INNER JOIN news n ON f.news_id = n.news_id
+        WHERE n.status = 'published' 
+          AND f.manually_removed = false
+          AND (f.ends_at IS NULL OR f.ends_at > CURRENT_TIMESTAMP)
+      `),
+      pool.query(`
+        SELECT
+          n.news_id, n.title, n.excerpt, n.slug, n.image_url, n.published_at,
+          n.reading_time, n.views, n.likes_count, n.comments_count, n.share_count,
+          n.meta_description, n.tags,
+          COALESCE(a.first_name, 'Daily Vaibe') as first_name,
+          COALESCE(a.last_name, 'Editor') as last_name,
+          c.name as category_name, 
+          c.slug as category_slug, 
+          c.color as category_color,
+          f.tier as featured_tier,
+          f.starts_at as featured_started_at,
+          f.ends_at as featured_ends_at
+        FROM featured_news f
+        INNER JOIN news n ON f.news_id = n.news_id
+        LEFT JOIN admins a ON n.author_id = a.admin_id
+        LEFT JOIN categories c ON n.category_id = c.category_id
+        WHERE n.status = 'published' 
+          AND f.manually_removed = false
+          AND (f.ends_at IS NULL OR f.ends_at > CURRENT_TIMESTAMP)
+        ORDER BY 
+          CASE f.tier
+            WHEN 'gold' THEN 1
+            WHEN 'silver' THEN 2
+            WHEN 'bronze' THEN 3
+            ELSE 4
+          END,
+          f.starts_at DESC,
+          n.published_at DESC
+        LIMIT $1 OFFSET $2
+      `, [limit, offset])
+    ]);
+
+    const total = parseInt(countResult.rows[0]?.total || '0');
+    const totalPages = Math.ceil(total / limit);
+
+    return res.json({
+      success: true,
+      news: newsResult.rows.map(article => ({
+        ...normalizeArticle(article),
+        featured: {
+          tier: article.featured_tier,
+          started_at: article.featured_started_at,
+          ends_at: article.featured_ends_at,
+          emoji: article.featured_tier === 'gold' ? '⭐' : 
+                 article.featured_tier === 'silver' ? '✨' : '💫'
+        }
+      })),
+      pagination: {
+        current_page: page,
+        per_page: limit,
+        total_items: total,
+        total_pages: totalPages,
+        has_next: page < totalPages,
+        has_prev: page > 1
+      }
+    });
+  } catch (error) {
+    console.error('[Featured] Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch featured news',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+module.exports = {
+  pinnedRouter,
+  breakingRouter,
+  featuredRouter
+};

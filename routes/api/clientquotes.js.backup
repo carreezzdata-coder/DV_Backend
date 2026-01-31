@@ -1,0 +1,104 @@
+const express = require('express');
+const router = express.Router();
+const { getPool } = require('../../config/db');
+
+const getImageUrl = (imageUrl) => {
+  if (!imageUrl) return null;
+  if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
+    return imageUrl;
+  }
+
+  const cleanPath = imageUrl.startsWith('/') ? imageUrl.substring(1) : imageUrl;
+
+  if (process.env.NODE_ENV === 'development') {
+    return `http://localhost:5000/${cleanPath}`;
+  }
+
+  const r2Url = process.env.R2_PUBLIC_URL;
+  if (r2Url) {
+    const cleanUrl = r2Url.endsWith('/') ? r2Url.slice(0, -1) : r2Url;
+    return `${cleanUrl}/${cleanPath}`;
+  }
+
+  return imageUrl;
+};
+
+router.get('/', async (req, res) => {
+  res.set({
+    'Cache-Control': 'public, max-age=300, s-maxage=900, stale-while-revalidate=3600',
+    'CDN-Cache-Control': 'max-age=900',
+    'Vary': 'Accept-Encoding',
+    'X-Content-Type-Options': 'nosniff'
+  });
+
+  try {
+    const pool = getPool();
+
+    console.log('[Client Quotes API] Fetching active quotes');
+
+    const quotesQuery = `
+      SELECT
+        q.quote_id,
+        q.quote_text,
+        q.sayer_name,
+        q.sayer_title,
+        q.active,
+        q.image_url,
+        q.created_at,
+        q.updated_at
+      FROM news_quotes q
+      WHERE q.active = true
+      ORDER BY q.created_at DESC
+      LIMIT 100
+    `;
+
+    const result = await pool.query(quotesQuery);
+
+    console.log(`[Client Quotes API] Found ${result.rows.length} active quotes`);
+
+    const quotes = result.rows.map(quote => ({
+      quote_id: quote.quote_id,
+      quote_text: quote.quote_text,
+      sayer_name: quote.sayer_name,
+      sayer_title: quote.sayer_title || '',
+      sayer_image_url: getImageUrl(quote.image_url),
+      active: quote.active,
+      created_at: quote.created_at,
+      updated_at: quote.updated_at
+    }));
+
+    const now = new Date();
+    const threeDaysAgo = new Date(now.getTime() - (3 * 24 * 60 * 60 * 1000));
+    const sevenDaysAgo = new Date(now.getTime() - (7 * 24 * 60 * 60 * 1000));
+
+    const freshQuotes = quotes.filter(q => new Date(q.created_at) >= threeDaysAgo);
+    const strikingQuotes = quotes.filter(q => {
+      const created = new Date(q.created_at);
+      return created < threeDaysAgo && created >= sevenDaysAgo;
+    }).slice(0, 12);
+    const trendingQuotes = quotes.filter(q => new Date(q.created_at) < sevenDaysAgo).slice(0, 12);
+
+    console.log(`[Client Quotes API] Fresh: ${freshQuotes.length}, Striking: ${strikingQuotes.length}, Trending: ${trendingQuotes.length}`);
+
+    const responseData = {
+      success: true,
+      quotes: freshQuotes,
+      strikingQuotes: strikingQuotes,
+      trendingQuotes: trendingQuotes
+    };
+
+    return res.json(responseData);
+
+  } catch (error) {
+    console.error('[Client Quotes API] ERROR:', error.message);
+    console.error('[Client Quotes API] Stack:', error.stack);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+module.exports = router;

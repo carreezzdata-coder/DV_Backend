@@ -1,0 +1,213 @@
+CREATE TABLE public.news (
+    news_id integer NOT NULL,
+    title character varying(200) NOT NULL,
+    content text NOT NULL,
+    excerpt text,
+    slug character varying(200),
+    category_id integer,
+    author_id integer,
+    image_url character varying(500),
+    processed_content text,
+    quote_sayer text,
+    quote_position integer DEFAULT 0,
+    views integer DEFAULT 0,
+    likes_count integer DEFAULT 0,
+    comments_count integer DEFAULT 0,
+    share_count integer DEFAULT 0,
+    status public.news_status DEFAULT 'draft'::public.news_status,
+    priority character varying(10) DEFAULT 'medium'::character varying,
+    tags text,
+    meta_description text,
+    seo_keywords text,
+    reading_time integer,
+    published_at timestamp without time zone,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    uuid uuid DEFAULT gen_random_uuid(),
+    fact_checked boolean DEFAULT false,
+    fact_checked_by integer,
+    content_warning text,
+    sensitive boolean DEFAULT false,
+    reading_level character varying(20),
+    ai_summary text,
+    last_edited_by integer,
+    last_edited_at timestamp without time zone,
+    revision integer DEFAULT 1,
+    primary_category_id integer,
+    quotes_data jsonb DEFAULT '[]'::jsonb NOT NULL,
+    sources jsonb DEFAULT '[]'::jsonb NOT NULL,
+    editor_pick boolean DEFAULT false,
+    CONSTRAINT news_priority_check CHECK (((priority)::text = ANY (ARRAY[('high'::character varying)::text, ('medium'::character varying)::text, ('low'::character varying)::text])))
+);
+
+
+ALTER TABLE public.news OWNER TO postgres;
+
+--
+-- Name: COLUMN news.priority; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.news.priority IS 'Article priority: high, medium, or low';
+
+
+--
+-- Name: COLUMN news.uuid; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.news.uuid IS 'Universal unique identifier for external references';
+
+
+--
+-- Name: COLUMN news.fact_checked; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.news.fact_checked IS 'Whether article has been fact-checked';
+
+
+--
+-- Name: COLUMN news.content_warning; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.news.content_warning IS 'Warning text for sensitive content';
+
+
+--
+-- Name: COLUMN news.reading_level; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.news.reading_level IS 'Target reading level: general, expert, etc';
+
+
+--
+-- Name: COLUMN news.ai_summary; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.news.ai_summary IS 'AI-generated summary for quick overview';
+
+
+--
+-- Name: COLUMN news.last_edited_by; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.news.last_edited_by IS 'Most recent editor';
+
+
+--
+-- Name: COLUMN news.revision; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.news.revision IS 'Version number for change tracking';
+
+
+--
+-- Name: news_social_media; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.news_social_media (
+    social_media_id integer NOT NULL,
+    news_id integer NOT NULL,
+    platform character varying(50) NOT NULL,
+    post_type character varying(50) NOT NULL,
+    post_url text NOT NULL,
+    post_id character varying(255),
+    embed_code text,
+    embed_html text,
+    oembed_url text,
+    author_name character varying(255),
+    author_handle character varying(255),
+    author_avatar_url text,
+    post_text text,
+    post_date timestamp with time zone,
+    thumbnail_url text,
+    media_url text,
+    media_urls jsonb DEFAULT '[]'::jsonb,
+    duration integer,
+    dimensions jsonb DEFAULT '{}'::jsonb,
+    likes_count integer DEFAULT 0,
+    comments_count integer DEFAULT 0,
+    shares_count integer DEFAULT 0,
+    views_count integer DEFAULT 0,
+    saves_count integer DEFAULT 0,
+    display_order integer DEFAULT 2,
+    is_featured boolean DEFAULT false,
+    show_full_embed boolean DEFAULT true,
+    auto_embed boolean DEFAULT true,
+    caption text,
+    hashtags text[] DEFAULT '{}'::text[],
+    mentions text[] DEFAULT '{}'::text[],
+    location character varying(255),
+    oembed_data jsonb DEFAULT '{}'::jsonb,
+    raw_api_response jsonb DEFAULT '{}'::jsonb,
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    last_fetched_at timestamp with time zone,
+    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    CONSTRAINT news_social_media_platform_check CHECK (((platform)::text = ANY (ARRAY[('youtube_video'::character varying)::text, ('youtube_short'::character varying)::text, ('twitter_post'::character varying)::text, ('twitter_video'::character varying)::text, ('x_post'::character varying)::text, ('x_video'::character varying)::text, ('instagram_post'::character varying)::text, ('instagram_reel'::character varying)::text, ('instagram_video'::character varying)::text, ('facebook_post'::character varying)::text, ('facebook_video'::character varying)::text, ('facebook_reel'::character varying)::text, ('tiktok_video'::character varying)::text, ('tiktok_reel'::character varying)::text, ('linkedin_post'::character varying)::text, ('threads_post'::character varying)::text, ('whatsapp_status'::character varying)::text]))),
+    CONSTRAINT news_social_media_post_type_check CHECK (((post_type)::text = ANY (ARRAY[('post'::character varying)::text, ('reel'::character varying)::text, ('video'::character varying)::text, ('short'::character varying)::text, ('story'::character varying)::text, ('status'::character varying)::text])))
+);
+
+
+ALTER TABLE public.news_social_media OWNER TO postgres;
+
+--
+-- Name: COLUMN news_social_media.display_order; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.news_social_media.display_order IS 'Paragraph index (1-based) for inline embed placement. Social media embeds always appear at least at paragraph 2.';
+
+
+--
+-- Name: embedded_social_posts; Type: VIEW; Schema: public; Owner: postgres
+--
+
+CREATE VIEW public.embedded_social_posts AS
+ SELECT sm.social_media_id,
+    sm.news_id,
+    sm.platform,
+    sm.post_type,
+    sm.post_url,
+    sm.post_id,
+    sm.embed_code,
+    sm.embed_html,
+    sm.oembed_url,
+    sm.author_name,
+    sm.author_handle,
+    sm.author_avatar_url,
+    sm.post_text,
+    sm.post_date,
+    sm.thumbnail_url,
+    sm.media_url,
+    sm.media_urls,
+    sm.duration,
+    sm.dimensions,
+    sm.likes_count,
+    sm.comments_count,
+    sm.shares_count,
+    sm.views_count,
+    sm.saves_count,
+    sm.display_order,
+    sm.is_featured,
+    sm.show_full_embed,
+    sm.auto_embed,
+    sm.caption,
+    sm.hashtags,
+    sm.mentions,
+    sm.location,
+    sm.metadata,
+    sm.oembed_data,
+    sm.raw_api_response,
+    sm.created_at,
+    sm.updated_at,
+    sm.last_fetched_at,
+    n.title AS article_title,
+    n.slug AS article_slug,
+    COALESCE(sm.embed_html,
+        CASE
+            WHEN ((sm.platform)::text ~~* 'facebook%'::text) THEN (('<div class="fb-post" data-href="'::text || sm.post_url) || '"></div>'::text)
+            WHEN (((sm.platform)::text ~~* 'twitter%'::text) OR ((sm.platform)::text ~~* 'x_%'::text)) THEN (('<blockquote class="twitter-tweet"><a href="'::text || sm.post_url) || '"></a></blockquote>'::text)
+            WHEN ((sm.platform)::text ~~* 'instagram%'::text) THEN (('<blockquote class="instagram-media" data-instgrm-permalink="'::text || sm.post_url) || '"></blockquote>'::text)
+            ELSE NULL::text
+        END) AS generated_embed_html
+   FROM (public.news_social_media sm
+     JOIN public.news n ON ((sm.news_id = n.news_id)))
+  WHERE (sm.show_full_embed = true);

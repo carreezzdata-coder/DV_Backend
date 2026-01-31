@@ -1,0 +1,793 @@
+const express = require('express');
+const router = express.Router();
+const { getPool } = require('../../config/db');
+const requireAdminAuth = require('../../middleware/adminAuth');
+const { getUserRole } = require('../../middleware/rolePermissions');
+
+const { FRONTEND_URL, CLIENT_URL, ADMIN_URL, API_DOMAIN, ALLOWED_ORIGINS, isOriginAllowed } = require('../../config/frontendconfig');
+
+const isProduction = process.env.NODE_ENV === 'production';
+
+const ROLE_HIERARCHY = {
+  super_admin: 4,
+  admin: 3,
+  editor: 2,
+  moderator: 1
+};
+
+const canManageRole = (requesterRole, targetRole) => {
+  const normalizedRequester = (requesterRole || '').toLowerCase();
+  const normalizedTarget = (targetRole || '').toLowerCase();
+  return (ROLE_HIERARCHY[normalizedRequester] || 0) > (ROLE_HIERARCHY[normalizedTarget] || 0);
+};
+
+const getDefaultPermissions = (role) => {
+  const normalizedRole = (role || '').toLowerCase();
+  const defaults = {
+    super_admin: {
+      view_analytics: true,
+      view_system_services: true,
+      add_user: true,
+      delete_user: true,
+      edit_articles: true,
+      approve_articles: true,
+      hold_articles: true,
+      use_chapter_system: true,
+      boost_articles: true,
+      receive_post_notifications: true,
+      view_all_posts: true,
+      manage_categories: true,
+      manage_media: true,
+      view_reports: true,
+      manage_settings: true,
+      manage_comments: true,
+      view_user_activity: true,
+      export_data: true,
+      approve_posts: true,
+      view_pending_approvals: true,
+      broadcast_messages: true,
+      admin_chat_access: true
+    },
+    admin: {
+      view_analytics: true,
+      view_system_services: true,
+      add_user: true,
+      delete_user: true,
+      edit_articles: true,
+      approve_articles: true,
+      hold_articles: true,
+      use_chapter_system: true,
+      boost_articles: true,
+      receive_post_notifications: true,
+      view_all_posts: true,
+      manage_categories: true,
+      manage_media: true,
+      view_reports: true,
+      manage_settings: false,
+      manage_comments: true,
+      view_user_activity: true,
+      export_data: true,
+      approve_posts: true,
+      view_pending_approvals: true,
+      broadcast_messages: false,
+      admin_chat_access: true
+    },
+    editor: {
+      view_analytics: true,
+      view_system_services: false,
+      add_user: false,
+      delete_user: false,
+      edit_articles: true,
+      approve_articles: true,
+      hold_articles: true,
+      use_chapter_system: true,
+      boost_articles: true,
+      receive_post_notifications: true,
+      view_all_posts: true,
+      manage_categories: false,
+      manage_media: true,
+      view_reports: false,
+      manage_settings: false,
+      manage_comments: true,
+      view_user_activity: false,
+      export_data: false,
+      approve_posts: true,
+      view_pending_approvals: true,
+      broadcast_messages: false,
+      admin_chat_access: true
+    },
+    moderator: {
+      view_analytics: false,
+      view_system_services: false,
+      add_user: false,
+      delete_user: false,
+      edit_articles: false,
+      approve_articles: false,
+      hold_articles: false,
+      use_chapter_system: true,
+      boost_articles: false,
+      receive_post_notifications: false,
+      view_all_posts: false,
+      manage_categories: false,
+      manage_media: false,
+      view_reports: false,
+      manage_settings: false,
+      manage_comments: true,
+      view_user_activity: false,
+      export_data: false,
+      approve_posts: false,
+      view_pending_approvals: false,
+      broadcast_messages: false,
+      admin_chat_access: true
+    }
+  };
+
+  return defaults[normalizedRole] || {};
+};
+
+router.get('/', requireAdminAuth, async (req, res) => {
+  const pool = getPool();
+
+  try {
+    const adminId = req.adminId;
+    
+    if (!adminId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+        users: []
+      });
+    }
+
+    const userRole = await getUserRole(adminId);
+    
+    if (!userRole) {
+      return res.status(403).json({
+        success: false,
+        message: 'Invalid user role',
+        users: []
+      });
+    }
+
+    const normalizedUserRole = userRole.toLowerCase();
+    const canViewAll = normalizedUserRole === 'super_admin' || normalizedUserRole === 'admin';
+
+    let query;
+    let params;
+
+    if (canViewAll) {
+      query = `
+        SELECT
+          admin_id,
+          first_name,
+          last_name,
+          email,
+          phone,
+          role,
+          permissions,
+          status,
+          last_login,
+          created_at
+        FROM admins
+        ORDER BY
+          CASE role
+            WHEN 'super_admin' THEN 1
+            WHEN 'admin' THEN 2
+            WHEN 'editor' THEN 3
+            WHEN 'moderator' THEN 4
+            ELSE 5
+          END,
+          created_at DESC
+      `;
+      params = [];
+    } else if (normalizedUserRole === 'editor') {
+      query = `
+        SELECT
+          admin_id,
+          first_name,
+          last_name,
+          email,
+          role,
+          permissions,
+          status,
+          last_login,
+          created_at
+        FROM admins
+        WHERE role NOT IN ('super_admin', 'admin')
+        ORDER BY created_at DESC
+      `;
+      params = [];
+    } else {
+      query = `
+        SELECT
+          admin_id,
+          first_name,
+          last_name,
+          email,
+          role,
+          permissions,
+          status,
+          last_login,
+          created_at
+        FROM admins
+        WHERE admin_id = $1
+      `;
+      params = [adminId];
+    }
+
+    const result = await pool.query(query, params);
+
+    const users = result.rows.map(user => ({
+      ...user,
+      permissions: user.permissions || getDefaultPermissions(user.role)
+    }));
+
+    return res.status(200).json({
+      success: true,
+      users: users,
+      total: users.length,
+      canManage: canViewAll,
+      your_role: normalizedUserRole
+    });
+
+  } catch (error) {
+    console.error('[User Roles] GET error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      users: [],
+      error: isProduction ? undefined : error.message
+    });
+  }
+});
+
+router.get('/:id', requireAdminAuth, async (req, res) => {
+  const pool = getPool();
+
+  try {
+    const adminId = req.adminId;
+    const userRole = await getUserRole(adminId);
+    const normalizedUserRole = (userRole || '').toLowerCase();
+    const { id } = req.params;
+
+    if (!id || isNaN(parseInt(id))) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid user ID is required'
+      });
+    }
+
+    const canViewAll = normalizedUserRole === 'super_admin' || normalizedUserRole === 'admin';
+
+    if (!canViewAll && parseInt(id) !== adminId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Insufficient permissions to view this user'
+      });
+    }
+
+    const result = await pool.query(
+      `SELECT
+        admin_id,
+        first_name,
+        last_name,
+        email,
+        phone,
+        role,
+        permissions,
+        status,
+        last_login,
+        created_at,
+        updated_at
+      FROM admins
+      WHERE admin_id = $1`,
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    const user = {
+      ...result.rows[0],
+      permissions: result.rows[0].permissions || getDefaultPermissions(result.rows[0].role)
+    };
+
+    if (!canViewAll && !['super_admin', 'admin'].includes(user.role)) {
+      if (normalizedUserRole === 'editor' && ['super_admin', 'admin'].includes(user.role)) {
+        return res.status(403).json({
+          success: false,
+          message: 'Insufficient permissions to view this user'
+        });
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      user: user
+    });
+
+  } catch (error) {
+    console.error('[User Roles] GET ID error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: isProduction ? undefined : error.message
+    });
+  }
+});
+
+router.put('/:id', requireAdminAuth, async (req, res) => {
+  const pool = getPool();
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const adminId = req.adminId;
+    const userRole = await getUserRole(adminId);
+    const normalizedUserRole = (userRole || '').toLowerCase();
+    const { id } = req.params;
+    const { role, permissions } = req.body;
+
+    if (!id || isNaN(parseInt(id))) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'Valid user ID is required'
+      });
+    }
+
+    if (!['super_admin', 'admin'].includes(normalizedUserRole)) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({
+        success: false,
+        message: 'Only Super Admins and Admins can update user permissions'
+      });
+    }
+
+    const existingUser = await client.query(
+      'SELECT admin_id, role, email FROM admins WHERE admin_id = $1',
+      [id]
+    );
+
+    if (existingUser.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    const targetUser = existingUser.rows[0];
+
+    if (parseInt(id) === adminId) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({
+        success: false,
+        message: 'Cannot modify your own permissions'
+      });
+    }
+
+    if (!canManageRole(normalizedUserRole, targetUser.role)) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({
+        success: false,
+        message: 'Insufficient permissions to modify this user'
+      });
+    }
+
+    if (role && !canManageRole(normalizedUserRole, role)) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({
+        success: false,
+        message: 'Cannot assign a role equal to or higher than yours'
+      });
+    }
+
+    const validRoles = ['moderator', 'editor', 'admin', 'super_admin'];
+    if (role && !validRoles.includes(role)) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid role specified'
+      });
+    }
+
+    const updateFields = [];
+    const updateValues = [];
+    let paramIndex = 1;
+
+    if (role) {
+      updateFields.push(`role = $${paramIndex++}`);
+      updateValues.push(role);
+    }
+
+    if (permissions) {
+      updateFields.push(`permissions = $${paramIndex++}`);
+      updateValues.push(JSON.stringify(permissions));
+    }
+
+    updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
+    updateValues.push(id);
+
+    const result = await client.query(
+      `UPDATE admins
+       SET ${updateFields.join(', ')}
+       WHERE admin_id = $${paramIndex}
+       RETURNING admin_id, first_name, last_name, email, role, permissions, status, updated_at`,
+      updateValues
+    );
+
+    const ip = req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.ip || 'unknown';
+    await client.query(
+      `INSERT INTO admin_activity_log (admin_id, action, target_type, target_id, details, ip_address)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        adminId,
+        'update_permissions',
+        'admin',
+        id,
+        `Updated role and permissions for user ID ${id}`,
+        ip
+      ]
+    );
+
+    await client.query('COMMIT');
+
+    res.status(200).json({
+      success: true,
+      message: 'User permissions updated successfully',
+      user: result.rows[0]
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('[User Roles] PUT error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: isProduction ? undefined : error.message
+    });
+  } finally {
+    client.release();
+  }
+});
+
+router.put('/:id/status', requireAdminAuth, async (req, res) => {
+  const pool = getPool();
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const adminId = req.adminId;
+    const userRole = await getUserRole(adminId);
+    const normalizedUserRole = (userRole || '').toLowerCase();
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!id || isNaN(parseInt(id))) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'Valid user ID is required'
+      });
+    }
+
+    if (!status || !['active', 'suspended'].includes(status)) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'Valid status is required (active or suspended)'
+      });
+    }
+
+    if (!['super_admin', 'admin'].includes(normalizedUserRole)) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({
+        success: false,
+        message: 'Only Super Admins and Admins can change user status'
+      });
+    }
+
+    const existingUser = await client.query(
+      'SELECT admin_id, role, status FROM admins WHERE admin_id = $1',
+      [id]
+    );
+
+    if (existingUser.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    const targetUser = existingUser.rows[0];
+
+    if (parseInt(id) === adminId) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({
+        success: false,
+        message: 'Cannot change your own status'
+      });
+    }
+
+    if (!canManageRole(normalizedUserRole, targetUser.role)) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({
+        success: false,
+        message: 'Insufficient permissions to modify this user'
+      });
+    }
+
+    const result = await client.query(
+      `UPDATE admins
+       SET status = $1, updated_at = CURRENT_TIMESTAMP
+       WHERE admin_id = $2
+       RETURNING admin_id, first_name, last_name, email, role, status, updated_at`,
+      [status, id]
+    );
+
+    const ip = req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.ip || 'unknown';
+    await client.query(
+      `INSERT INTO admin_activity_log (admin_id, action, target_type, target_id, details, ip_address)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        adminId,
+        'update_status',
+        'admin',
+        id,
+        `Changed status to ${status} for user ID ${id}`,
+        ip
+      ]
+    );
+
+    if (status === 'suspended') {
+      await client.query(
+        'DELETE FROM admin_sessions WHERE admin_id = $1',
+        [id]
+      );
+    }
+
+    await client.query('COMMIT');
+
+    res.status(200).json({
+      success: true,
+      message: `User status updated to ${status}`,
+      user: result.rows[0]
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('[User Roles] Status update error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: isProduction ? undefined : error.message
+    });
+  } finally {
+    client.release();
+  }
+});
+
+router.delete('/:id', requireAdminAuth, async (req, res) => {
+  const pool = getPool();
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const adminId = req.adminId;
+    const userRole = await getUserRole(adminId);
+    const normalizedUserRole = (userRole || '').toLowerCase();
+    const { id } = req.params;
+
+    if (!id || isNaN(parseInt(id))) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'Valid user ID is required'
+      });
+    }
+
+    if (!['super_admin', 'admin'].includes(normalizedUserRole)) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({
+        success: false,
+        message: 'Only Super Admins and Admins can delete users'
+      });
+    }
+
+    const existingUser = await client.query(
+      'SELECT admin_id, email, first_name, last_name, role FROM admins WHERE admin_id = $1',
+      [id]
+    );
+
+    if (existingUser.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    const userToDelete = existingUser.rows[0];
+
+    if (parseInt(id) === adminId) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({
+        success: false,
+        message: 'Cannot delete your own account'
+      });
+    }
+
+    if (!canManageRole(normalizedUserRole, userToDelete.role)) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({
+        success: false,
+        message: 'Insufficient permissions to delete this user'
+      });
+    }
+
+    if (userToDelete.role === 'super_admin') {
+      const superAdminCount = await client.query(
+        'SELECT COUNT(*) as count FROM admins WHERE role = $1 AND status = $2',
+        ['super_admin', 'active']
+      );
+
+      if (parseInt(superAdminCount.rows[0].count) <= 1) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({
+          success: false,
+          message: 'Cannot delete the last super administrator'
+        });
+      }
+    }
+
+    await client.query(
+      'UPDATE news SET author_id = NULL WHERE author_id = $1',
+      [id]
+    );
+
+    await client.query('DELETE FROM admins WHERE admin_id = $1', [id]);
+
+    const ip = req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.ip || 'unknown';
+    await client.query(
+      `INSERT INTO admin_activity_log (admin_id, action, target_type, target_id, details, ip_address)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        adminId,
+        'delete_user',
+        'admin',
+        id,
+        `Deleted admin user: ${userToDelete.first_name} ${userToDelete.last_name} (${userToDelete.email})`,
+        ip
+      ]
+    );
+
+    await client.query('COMMIT');
+
+    res.status(200).json({
+      success: true,
+      message: 'User deleted successfully'
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('[User Roles] DELETE error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: isProduction ? undefined : error.message
+    });
+  } finally {
+    client.release();
+  }
+});
+
+router.get('/:id/posts', requireAdminAuth, async (req, res) => {
+  const pool = getPool();
+
+  try {
+    const adminId = req.adminId;
+    const userRole = await getUserRole(adminId);
+    const normalizedUserRole = (userRole || '').toLowerCase();
+    const { id } = req.params;
+
+    // Allow super_admin and admin to view anyone's posts
+    // Allow users to view their own posts
+    const canViewAllPosts = ['super_admin', 'admin'].includes(normalizedUserRole);
+    const isOwnPosts = parseInt(id) === adminId;
+
+    if (!canViewAllPosts && !isOwnPosts) {
+      return res.status(403).json({
+        success: false,
+        message: 'You can only view your own posts'
+      });
+    }
+
+    const { page = 1, limit = 20, status } = req.query;
+
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+
+    let whereConditions = ['n.author_id = $1'];
+    let queryParams = [id];
+    let paramCount = 1;
+
+    if (status) {
+      paramCount++;
+      whereConditions.push(`n.status = ${paramCount}`);
+      queryParams.push(status);
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+    paramCount++;
+    const limitParam = paramCount;
+    paramCount++;
+    const offsetParam = paramCount;
+
+    const postsQuery = `
+      SELECT
+        n.news_id,
+        n.title,
+        n.slug,
+        n.status,
+        n.created_at,
+        n.published_at,
+        n.views,
+        n.likes_count,
+        n.comments_count,
+        c.name as category_name
+      FROM news n
+      LEFT JOIN categories c ON n.primary_category_id = c.category_id
+      ${whereClause}
+      ORDER BY n.created_at DESC
+      LIMIT ${limitParam} OFFSET ${offsetParam}
+    `;
+
+    queryParams.push(parseInt(limit), offset);
+
+    const countQuery = `
+      SELECT COUNT(*) as total FROM news n ${whereClause}
+    `;
+
+    const [postsResult, countResult] = await Promise.all([
+      pool.query(postsQuery, queryParams),
+      pool.query(countQuery, queryParams.slice(0, -2))
+    ]);
+
+    const totalPosts = parseInt(countResult.rows[0].total);
+
+    res.status(200).json({
+      success: true,
+      posts: postsResult.rows,
+      pagination: {
+        current_page: parseInt(page),
+        total_pages: Math.ceil(totalPosts / parseInt(limit)),
+        total_posts: totalPosts,
+        has_next: parseInt(page) < Math.ceil(totalPosts / parseInt(limit)),
+        has_prev: parseInt(page) > 1
+      },
+      user_info: {
+        user_id: id,
+        total_posts: totalPosts
+      }
+    });
+
+  } catch (error) {
+    console.error('[User Roles] Posts error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: isProduction ? undefined : error.message
+    });
+  }
+});
+
+module.exports = router;

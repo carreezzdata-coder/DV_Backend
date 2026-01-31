@@ -1,0 +1,258 @@
+{
+  "timestamp": "2025-12-21T08:21:21.947Z",
+  "summary": {
+    "total": 50,
+    "passed": 24,
+    "failed": 26,
+    "warnings": 22,
+    "passRate": "48.00%"
+  },
+  "fileStats": {
+    "services": 6,
+    "middleware": 4,
+    "routes": 36,
+    "config": 2,
+    "utils": 0,
+    "main": null
+  },
+  "errors": [
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\services\\geoCdnService.js",
+      "category": "services",
+      "error": "Invalid or unexpected token",
+      "line": "1638",
+      "severity": "error",
+      "stack": "C:\\Projects\\Daily Vaibe\\backend\\services\\geoCdnService.js:1\n\\// backend/services/geoCdnService.js\n^\n\nSyntaxError: Invalid or unexpected token\n    at wrapSafe (node:internal/modules/cjs/loader:1638:18)\n    at Module._compile (node:internal/modules/cjs/loader:1680:20)\n    at Object..js (node:internal/modules/cjs/loader:1839:10)\n    at Module.load (node:internal/modules/cjs/loader:1441:32)\n    at Function._load (node:internal/modules/cjs/loader:1263:12)\n    at TracingChannel.traceSync (node:diagnostics_channel:322:14)\n    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)\n    at Module.require (node:internal/modules/cjs/loader:1463:12)\n    at require (node:internal/modules/helpers:147:16)\n    at checkSyntax (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:211:5)"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\middleware\\geo.js",
+      "category": "middleware",
+      "error": "results.warnings.push is not a function",
+      "line": "200",
+      "severity": "error",
+      "stack": "TypeError: results.warnings.push is not a function\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:200:26\n    at Array.forEach (<anonymous>)\n    at checkSyntax (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:197:19)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:265:7\n    at Array.forEach (<anonymous>)\n    at scanDirectory (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:256:9)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:407:5\n    at Array.forEach (<anonymous>)\n    at Object.<anonymous> (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:402:13)\n    at Module._compile (node:internal/modules/cjs/loader:1706:14)"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\admin\\auth.js",
+      "category": "routes",
+      "error": "results.warnings.push is not a function",
+      "line": "200",
+      "severity": "error",
+      "stack": "TypeError: results.warnings.push is not a function\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:200:26\n    at Array.forEach (<anonymous>)\n    at checkSyntax (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:197:19)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:265:7\n    at Array.forEach (<anonymous>)\n    at scanDirectory (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:256:9)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:262:9\n    at Array.forEach (<anonymous>)\n    at scanDirectory (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:256:9)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:407:5"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\admin\\categories.js",
+      "category": "routes",
+      "error": "results.warnings.push is not a function",
+      "line": "200",
+      "severity": "error",
+      "stack": "TypeError: results.warnings.push is not a function\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:200:26\n    at Array.forEach (<anonymous>)\n    at checkSyntax (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:197:19)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:265:7\n    at Array.forEach (<anonymous>)\n    at scanDirectory (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:256:9)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:262:9\n    at Array.forEach (<anonymous>)\n    at scanDirectory (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:256:9)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:407:5"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\admin\\createposts.js",
+      "category": "routes",
+      "error": "results.warnings.push is not a function",
+      "line": "200",
+      "severity": "error",
+      "stack": "TypeError: results.warnings.push is not a function\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:200:26\n    at Array.forEach (<anonymous>)\n    at checkSyntax (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:197:19)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:265:7\n    at Array.forEach (<anonymous>)\n    at scanDirectory (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:256:9)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:262:9\n    at Array.forEach (<anonymous>)\n    at scanDirectory (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:256:9)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:407:5"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\admin\\edit.js",
+      "category": "routes",
+      "error": "results.warnings.push is not a function",
+      "line": "200",
+      "severity": "error",
+      "stack": "TypeError: results.warnings.push is not a function\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:200:26\n    at Array.forEach (<anonymous>)\n    at checkSyntax (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:197:19)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:265:7\n    at Array.forEach (<anonymous>)\n    at scanDirectory (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:256:9)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:262:9\n    at Array.forEach (<anonymous>)\n    at scanDirectory (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:256:9)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:407:5"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\admin\\news.js",
+      "category": "routes",
+      "error": "results.warnings.push is not a function",
+      "line": "200",
+      "severity": "error",
+      "stack": "TypeError: results.warnings.push is not a function\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:200:26\n    at Array.forEach (<anonymous>)\n    at checkSyntax (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:197:19)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:265:7\n    at Array.forEach (<anonymous>)\n    at scanDirectory (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:256:9)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:262:9\n    at Array.forEach (<anonymous>)\n    at scanDirectory (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:256:9)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:407:5"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\admin\\quotes.js",
+      "category": "routes",
+      "error": "results.warnings.push is not a function",
+      "line": "200",
+      "severity": "error",
+      "stack": "TypeError: results.warnings.push is not a function\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:200:26\n    at Array.forEach (<anonymous>)\n    at checkSyntax (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:197:19)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:265:7\n    at Array.forEach (<anonymous>)\n    at scanDirectory (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:256:9)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:262:9\n    at Array.forEach (<anonymous>)\n    at scanDirectory (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:256:9)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:407:5"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\admin\\retrieveposts.js",
+      "category": "routes",
+      "error": "results.warnings.push is not a function",
+      "line": "200",
+      "severity": "error",
+      "stack": "TypeError: results.warnings.push is not a function\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:200:26\n    at Array.forEach (<anonymous>)\n    at checkSyntax (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:197:19)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:265:7\n    at Array.forEach (<anonymous>)\n    at scanDirectory (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:256:9)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:262:9\n    at Array.forEach (<anonymous>)\n    at scanDirectory (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:256:9)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:407:5"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\admin\\systemMonitoring.js",
+      "category": "routes",
+      "error": "results.warnings.push is not a function",
+      "line": "200",
+      "severity": "error",
+      "stack": "TypeError: results.warnings.push is not a function\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:200:26\n    at Array.forEach (<anonymous>)\n    at checkSyntax (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:197:19)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:265:7\n    at Array.forEach (<anonymous>)\n    at scanDirectory (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:256:9)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:262:9\n    at Array.forEach (<anonymous>)\n    at scanDirectory (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:256:9)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:407:5"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\admin\\systemServices.js",
+      "category": "routes",
+      "error": "Invalid or unexpected token",
+      "line": "1638",
+      "severity": "error",
+      "stack": "C:\\Projects\\Daily Vaibe\\backend\\services\\geoCdnService.js:1\n\\// backend/services/geoCdnService.js\n^\n\nSyntaxError: Invalid or unexpected token\n    at wrapSafe (node:internal/modules/cjs/loader:1638:18)\n    at Module._compile (node:internal/modules/cjs/loader:1680:20)\n    at Object..js (node:internal/modules/cjs/loader:1839:10)\n    at Module.load (node:internal/modules/cjs/loader:1441:32)\n    at Function._load (node:internal/modules/cjs/loader:1263:12)\n    at TracingChannel.traceSync (node:diagnostics_channel:322:14)\n    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)\n    at Module.require (node:internal/modules/cjs/loader:1463:12)\n    at require (node:internal/modules/helpers:147:16)\n    at Object.<anonymous> (C:\\Projects\\Daily Vaibe\\backend\\routes\\admin\\systemServices.js:8:23)"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\admin\\user.js",
+      "category": "routes",
+      "error": "results.warnings.push is not a function",
+      "line": "200",
+      "severity": "error",
+      "stack": "TypeError: results.warnings.push is not a function\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:200:26\n    at Array.forEach (<anonymous>)\n    at checkSyntax (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:197:19)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:265:7\n    at Array.forEach (<anonymous>)\n    at scanDirectory (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:256:9)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:262:9\n    at Array.forEach (<anonymous>)\n    at scanDirectory (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:256:9)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:407:5"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\admin\\userroles.js",
+      "category": "routes",
+      "error": "results.warnings.push is not a function",
+      "line": "200",
+      "severity": "error",
+      "stack": "TypeError: results.warnings.push is not a function\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:200:26\n    at Array.forEach (<anonymous>)\n    at checkSyntax (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:197:19)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:265:7\n    at Array.forEach (<anonymous>)\n    at scanDirectory (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:256:9)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:262:9\n    at Array.forEach (<anonymous>)\n    at scanDirectory (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:256:9)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:407:5"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\api\\ads.js",
+      "category": "routes",
+      "error": "results.warnings.push is not a function",
+      "line": "200",
+      "severity": "error",
+      "stack": "TypeError: results.warnings.push is not a function\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:200:26\n    at Array.forEach (<anonymous>)\n    at checkSyntax (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:197:19)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:265:7\n    at Array.forEach (<anonymous>)\n    at scanDirectory (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:256:9)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:262:9\n    at Array.forEach (<anonymous>)\n    at scanDirectory (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:256:9)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:407:5"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\api\\articles.js",
+      "category": "routes",
+      "error": "results.warnings.push is not a function",
+      "line": "200",
+      "severity": "error",
+      "stack": "TypeError: results.warnings.push is not a function\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:200:26\n    at Array.forEach (<anonymous>)\n    at checkSyntax (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:197:19)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:265:7\n    at Array.forEach (<anonymous>)\n    at scanDirectory (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:256:9)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:262:9\n    at Array.forEach (<anonymous>)\n    at scanDirectory (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:256:9)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:407:5"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\api\\client-index.js",
+      "category": "routes",
+      "error": "Cannot find module './category'\nRequire stack:\n- C:\\Projects\\Daily Vaibe\\backend\\routes\\api\\client-index.js\n- C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js",
+      "line": "1383",
+      "severity": "error",
+      "stack": "Error: Cannot find module './category'\nRequire stack:\n- C:\\Projects\\Daily Vaibe\\backend\\routes\\api\\client-index.js\n- C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js\n    at Function._resolveFilename (node:internal/modules/cjs/loader:1383:15)\n    at defaultResolveImpl (node:internal/modules/cjs/loader:1025:19)\n    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1030:22)\n    at Function._load (node:internal/modules/cjs/loader:1192:37)\n    at TracingChannel.traceSync (node:diagnostics_channel:322:14)\n    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)\n    at Module.require (node:internal/modules/cjs/loader:1463:12)\n    at require (node:internal/modules/helpers:147:16)\n    at Object.<anonymous> (C:\\Projects\\Daily Vaibe\\backend\\routes\\api\\client-index.js:7:24)\n    at Module._compile (node:internal/modules/cjs/loader:1706:14)"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\api\\clientquotes.js",
+      "category": "routes",
+      "error": "results.warnings.push is not a function",
+      "line": "200",
+      "severity": "error",
+      "stack": "TypeError: results.warnings.push is not a function\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:200:26\n    at Array.forEach (<anonymous>)\n    at checkSyntax (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:197:19)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:265:7\n    at Array.forEach (<anonymous>)\n    at scanDirectory (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:256:9)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:262:9\n    at Array.forEach (<anonymous>)\n    at scanDirectory (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:256:9)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:407:5"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\api\\news.js",
+      "category": "routes",
+      "error": "results.warnings.push is not a function",
+      "line": "200",
+      "severity": "error",
+      "stack": "TypeError: results.warnings.push is not a function\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:200:26\n    at Array.forEach (<anonymous>)\n    at checkSyntax (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:197:19)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:265:7\n    at Array.forEach (<anonymous>)\n    at scanDirectory (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:256:9)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:262:9\n    at Array.forEach (<anonymous>)\n    at scanDirectory (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:256:9)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:407:5"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\api\\search.js",
+      "category": "routes",
+      "error": "results.warnings.push is not a function",
+      "line": "200",
+      "severity": "error",
+      "stack": "TypeError: results.warnings.push is not a function\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:200:26\n    at Array.forEach (<anonymous>)\n    at checkSyntax (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:197:19)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:265:7\n    at Array.forEach (<anonymous>)\n    at scanDirectory (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:256:9)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:262:9\n    at Array.forEach (<anonymous>)\n    at scanDirectory (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:256:9)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:407:5"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\client\\auth.js",
+      "category": "routes",
+      "error": "results.warnings.push is not a function",
+      "line": "200",
+      "severity": "error",
+      "stack": "TypeError: results.warnings.push is not a function\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:200:26\n    at Array.forEach (<anonymous>)\n    at checkSyntax (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:197:19)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:265:7\n    at Array.forEach (<anonymous>)\n    at scanDirectory (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:256:9)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:262:9\n    at Array.forEach (<anonymous>)\n    at scanDirectory (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:256:9)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:407:5"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\public\\content.js",
+      "category": "routes",
+      "error": "results.warnings.push is not a function",
+      "line": "200",
+      "severity": "error",
+      "stack": "TypeError: results.warnings.push is not a function\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:200:26\n    at Array.forEach (<anonymous>)\n    at checkSyntax (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:197:19)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:265:7\n    at Array.forEach (<anonymous>)\n    at scanDirectory (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:256:9)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:262:9\n    at Array.forEach (<anonymous>)\n    at scanDirectory (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:256:9)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:407:5"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\routes\\test-routes.js",
+      "category": "routes",
+      "error": "Cannot find module './routes/admin/systemServices'\nRequire stack:\n- C:\\Projects\\Daily Vaibe\\backend\\routes\\test-routes.js\n- C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js",
+      "line": "1383",
+      "severity": "error",
+      "stack": "Error: Cannot find module './routes/admin/systemServices'\nRequire stack:\n- C:\\Projects\\Daily Vaibe\\backend\\routes\\test-routes.js\n- C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js\n    at Function._resolveFilename (node:internal/modules/cjs/loader:1383:15)\n    at defaultResolveImpl (node:internal/modules/cjs/loader:1025:19)\n    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1030:22)\n    at Function._load (node:internal/modules/cjs/loader:1192:37)\n    at TracingChannel.traceSync (node:diagnostics_channel:322:14)\n    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)\n    at Module.require (node:internal/modules/cjs/loader:1463:12)\n    at require (node:internal/modules/helpers:147:16)\n    at Object.<anonymous> (C:\\Projects\\Daily Vaibe\\backend\\routes\\test-routes.js:7:30)\n    at Module._compile (node:internal/modules/cjs/loader:1706:14)"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\config\\db.js",
+      "category": "config",
+      "error": "results.warnings.push is not a function",
+      "line": "200",
+      "severity": "error",
+      "stack": "TypeError: results.warnings.push is not a function\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:200:26\n    at Array.forEach (<anonymous>)\n    at checkSyntax (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:197:19)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:265:7\n    at Array.forEach (<anonymous>)\n    at scanDirectory (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:256:9)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:407:5\n    at Array.forEach (<anonymous>)\n    at Object.<anonymous> (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:402:13)\n    at Module._compile (node:internal/modules/cjs/loader:1706:14)"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\config\\imagesUpload.js",
+      "category": "config",
+      "error": "results.warnings.push is not a function",
+      "line": "200",
+      "severity": "error",
+      "stack": "TypeError: results.warnings.push is not a function\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:200:26\n    at Array.forEach (<anonymous>)\n    at checkSyntax (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:197:19)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:265:7\n    at Array.forEach (<anonymous>)\n    at scanDirectory (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:256:9)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:407:5\n    at Array.forEach (<anonymous>)\n    at Object.<anonymous> (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:402:13)\n    at Module._compile (node:internal/modules/cjs/loader:1706:14)"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\app.js",
+      "category": "main",
+      "error": "results.warnings.push is not a function",
+      "line": "200",
+      "severity": "error",
+      "stack": "TypeError: results.warnings.push is not a function\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:200:26\n    at Array.forEach (<anonymous>)\n    at checkSyntax (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:197:19)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:418:5\n    at Array.forEach (<anonymous>)\n    at Object.<anonymous> (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:415:11)\n    at Module._compile (node:internal/modules/cjs/loader:1706:14)\n    at Object..js (node:internal/modules/cjs/loader:1839:10)\n    at Module.load (node:internal/modules/cjs/loader:1441:32)\n    at Function._load (node:internal/modules/cjs/loader:1263:12)"
+    },
+    {
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\server.js",
+      "category": "main",
+      "error": "results.warnings.push is not a function",
+      "line": "200",
+      "severity": "error",
+      "stack": "TypeError: results.warnings.push is not a function\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:200:26\n    at Array.forEach (<anonymous>)\n    at checkSyntax (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:197:19)\n    at C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:418:5\n    at Array.forEach (<anonymous>)\n    at Object.<anonymous> (C:\\Projects\\Daily Vaibe\\backend\\scripts\\audit-backend.js:415:11)\n    at Module._compile (node:internal/modules/cjs/loader:1706:14)\n    at Object..js (node:internal/modules/cjs/loader:1839:10)\n    at Module.load (node:internal/modules/cjs/loader:1441:32)\n    at Function._load (node:internal/modules/cjs/loader:1263:12)"
+    }
+  ],
+  "warnings": 22,
+  "dependencies": {
+    "missing": [
+      "@aws-sdk",
+      "crypto",
+      "path",
+      "fs",
+      "os",
+      "http"
+    ],
+    "unused": [
+      "@aws-sdk/client-s3",
+      "@aws-sdk/s3-request-presigner",
+      "bcrypt",
+      "compression",
+      "cookie-parser",
+      "express-rate-limit",
+      "express-validator",
+      "helmet",
+      "jsonwebtoken",
+      "morgan",
+      "sharp",
+      "uuid",
+      "validator",
+      "winston",
+      "winston-daily-rotate-file",
+      "cross-env",
+      "rimraf"
+    ]
+  }
+}

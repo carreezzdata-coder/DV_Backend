@@ -1,0 +1,46 @@
+{
+  "timestamp": "2025-12-24T20:42:48.350Z",
+  "database": "dailyvaibe",
+  "summary": {
+    "total_steps": 4,
+    "completed": 2,
+    "failed": 1,
+    "warnings": 1
+  },
+  "details": [
+    {
+      "step": "backup",
+      "status": "success",
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\backups\\migrations\\news_backup_2025-12-24T20-42-48-285Z.json"
+    },
+    {
+      "step": "check_columns",
+      "status": "success",
+      "existing": [
+        "priority"
+      ],
+      "missing": [
+        "pinned",
+        "pin_type",
+        "pin_until",
+        "featured_hours",
+        "breaking_hours"
+      ]
+    },
+    {
+      "step": "create_enum",
+      "status": "success"
+    },
+    {
+      "step": "add_columns",
+      "status": "success",
+      "added": [
+        "pinned",
+        "pin_type",
+        "pin_until",
+        "featured_hours",
+        "breaking_hours"
+      ]
+    }
+  ]
+}

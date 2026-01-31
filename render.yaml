@@ -1,0 +1,17 @@
+# In your Render dashboard or render.yaml
+jobs:
+  - name: daily-db-maintenance
+    schedule: "0 2 * * *"  # 2 AM daily
+    command: npm run database:maintenance
+    
+  - name: weekly-auto-optimize
+    schedule: "0 3 * * 0"  # 3 AM every Sunday
+    command: npm run database:auto
+    
+  - name: health-check-alert
+    schedule: "0 4 * * *"  # 4 AM daily
+    command: npm run database:health
+    
+  - name: monthly-full-optimize
+    schedule: "0 5 1 * *"  # 5 AM on 1st of month
+    command: npm run database:optimize

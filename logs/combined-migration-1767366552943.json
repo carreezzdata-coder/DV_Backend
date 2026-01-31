@@ -1,0 +1,34 @@
+{
+  "timestamp": "2026-01-02T15:09:12.943Z",
+  "database": "dailyvaibe",
+  "migration": "Combined Video & Live Streaming System",
+  "summary": {
+    "total_steps": 6,
+    "completed": 5,
+    "failed": 1,
+    "warnings": 2
+  },
+  "details": [
+    {
+      "step": "backup",
+      "status": "success",
+      "file": "C:\\Projects\\Daily Vaibe\\backend\\backups\\combined-migration\\backup_2026-01-02T15-09-11-499Z.json"
+    },
+    {
+      "step": "create_enums",
+      "status": "success"
+    },
+    {
+      "step": "update_news_social_media",
+      "status": "success"
+    },
+    {
+      "step": "update_social_videos",
+      "status": "success"
+    },
+    {
+      "step": "create_analytics",
+      "status": "success"
+    }
+  ]
+}

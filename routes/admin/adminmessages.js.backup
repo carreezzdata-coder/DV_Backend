@@ -1,0 +1,328 @@
+const express = require('express');
+const router = express.Router();
+const { requirePublisher, canPublishDirectly } = require('../../middleware/rolePermissions');
+const { getPool } = require('../../config/db');
+const requireAdminAuth = require('../../middleware/adminAuth');
+const { getUserRole } = require('../../middleware/rolePermissions');
+
+// Get all messages for current admin
+router.get('/', requireAdminAuth, async (req, res) => {
+  const pool = getPool();
+  const client = await pool.connect();
+  
+  try {
+    const adminId = req.adminId;
+    const { type = 'all', page = 1, limit = 20 } = req.query;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    
+    let whereClause = 'WHERE (m.receiver_id = $1 OR m.sender_id = $1 OR m.is_broadcast = true)';
+    const queryParams = [adminId];
+    
+    if (type === 'received') {
+      whereClause = 'WHERE m.receiver_id = $1';
+    } else if (type === 'sent') {
+      whereClause = 'WHERE m.sender_id = $1 AND m.is_broadcast = false';
+    } else if (type === 'broadcast') {
+      whereClause = 'WHERE m.is_broadcast = true';
+    }
+    
+    const messagesQuery = `
+      SELECT 
+        m.message_id,
+        m.sender_id,
+        m.sender_name,
+        m.receiver_id,
+        m.message_text,
+        m.is_broadcast,
+        m.is_read,
+        m.created_at,
+        ra.first_name as receiver_first_name,
+        ra.last_name as receiver_last_name,
+        sa.first_name as sender_first_name,
+        sa.last_name as sender_last_name
+      FROM admin_chat_messages m
+      LEFT JOIN admins ra ON m.receiver_id = ra.admin_id
+      LEFT JOIN admins sa ON m.sender_id = sa.admin_id
+      ${whereClause}
+      ORDER BY m.created_at DESC
+      LIMIT $2 OFFSET $3
+    `;
+    
+    const countQuery = `
+      SELECT COUNT(*) as total
+      FROM admin_chat_messages m
+      ${whereClause}
+    `;
+    
+    queryParams.push(parseInt(limit), offset);
+    
+    const [messagesResult, countResult] = await Promise.all([
+      client.query(messagesQuery, queryParams),
+      client.query(countQuery, [adminId])
+    ]);
+    
+    const total = parseInt(countResult.rows[0].total);
+    const totalPages = Math.ceil(total / parseInt(limit));
+    
+    return res.status(200).json({
+      success: true,
+      messages: messagesResult.rows,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        totalPages,
+        hasNext: parseInt(page) < totalPages,
+        hasPrev: parseInt(page) > 1
+      }
+    });
+    
+  } catch (error) {
+    console.error('[Admin Messages GET] Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  } finally {
+    client.release();
+  }
+});
+
+// Get unread message count
+router.get('/unread-count', requireAdminAuth, async (req, res) => {
+  const pool = getPool();
+  
+  try {
+    const adminId = req.adminId;
+    
+    const result = await pool.query(
+      `SELECT COUNT(*) as unread_count 
+       FROM admin_chat_messages 
+       WHERE receiver_id = $1 AND is_read = false`,
+      [adminId]
+    );
+    
+    return res.status(200).json({
+      success: true,
+      unread_count: parseInt(result.rows[0].unread_count)
+    });
+    
+  } catch (error) {
+    console.error('[Admin Messages Unread Count] Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+});
+
+// Send a new message
+router.post('/', requireAdminAuth, async (req, res) => {
+  const pool = getPool();
+  const client = await pool.connect();
+  
+  try {
+    await client.query('BEGIN');
+    
+    const adminId = req.adminId;
+    const { receiver_id, message_text, is_broadcast = false } = req.body;
+    
+    if (!message_text || message_text.trim() === '') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'Message text is required'
+      });
+    }
+    
+    if (!is_broadcast && !receiver_id) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'Receiver is required for non-broadcast messages'
+      });
+    }
+    
+    const userRole = await getUserRole(adminId);
+    
+    // Only super_admin and admin can send broadcast messages
+    if (is_broadcast && !['super_admin', 'admin'].includes(userRole)) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({
+        success: false,
+        message: 'Only Super Admins and Admins can send broadcast messages'
+      });
+    }
+    
+    // Get sender name
+    const senderResult = await client.query(
+      'SELECT first_name, last_name FROM admins WHERE admin_id = $1',
+      [adminId]
+    );
+    
+    const senderName = `${senderResult.rows[0].first_name} ${senderResult.rows[0].last_name}`;
+    
+    const insertQuery = `
+      INSERT INTO admin_chat_messages (
+        sender_id,
+        sender_name,
+        receiver_id,
+        message_text,
+        is_broadcast
+      ) VALUES ($1, $2, $3, $4, $5)
+      RETURNING *
+    `;
+    
+    const result = await client.query(insertQuery, [
+      adminId,
+      senderName,
+      is_broadcast ? null : receiver_id,
+      message_text.trim(),
+      is_broadcast
+    ]);
+    
+    await client.query('COMMIT');
+    
+    return res.status(201).json({
+      success: true,
+      message: 'Message sent successfully',
+      data: result.rows[0]
+    });
+    
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('[Admin Messages POST] Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  } finally {
+    client.release();
+  }
+});
+
+// Mark message as read
+router.patch('/:message_id/read', requireAdminAuth, async (req, res) => {
+  const pool = getPool();
+  
+  try {
+    const adminId = req.adminId;
+    const { message_id } = req.params;
+    
+    const result = await pool.query(
+      `UPDATE admin_chat_messages 
+       SET is_read = true 
+       WHERE message_id = $1 AND receiver_id = $2
+       RETURNING *`,
+      [message_id, adminId]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Message not found or you are not the receiver'
+      });
+    }
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Message marked as read',
+      data: result.rows[0]
+    });
+    
+  } catch (error) {
+    console.error('[Admin Messages PATCH] Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+});
+
+// Delete message
+router.delete('/:message_id', requireAdminAuth, async (req, res) => {
+  const pool = getPool();
+  
+  try {
+    const adminId = req.adminId;
+    const { message_id } = req.params;
+    const userRole = await getUserRole(adminId);
+    
+    let deleteQuery;
+    let queryParams;
+    
+    // Super admins and admins can delete any message
+    if (['super_admin', 'admin'].includes(userRole)) {
+      deleteQuery = 'DELETE FROM admin_chat_messages WHERE message_id = $1 RETURNING *';
+      queryParams = [message_id];
+    } else {
+      // Others can only delete their sent messages
+      deleteQuery = 'DELETE FROM admin_chat_messages WHERE message_id = $1 AND sender_id = $2 RETURNING *';
+      queryParams = [message_id, adminId];
+    }
+    
+    const result = await pool.query(deleteQuery, queryParams);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Message not found or you do not have permission to delete it'
+      });
+    }
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Message deleted successfully'
+    });
+    
+  } catch (error) {
+    console.error('[Admin Messages DELETE] Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+});
+
+// Get all admins for messaging
+router.get('/admins-list', requireAdminAuth, async (req, res) => {
+  const pool = getPool();
+  
+  try {
+    const adminId = req.adminId;
+    
+    const result = await pool.query(
+      `SELECT 
+        admin_id,
+        first_name,
+        last_name,
+        email,
+        role,
+        status
+       FROM admins 
+       WHERE admin_id != $1 AND status = 'active'
+       ORDER BY first_name, last_name`,
+      [adminId]
+    );
+    
+    return res.status(200).json({
+      success: true,
+      admins: result.rows
+    });
+    
+  } catch (error) {
+    console.error('[Admin Messages List] Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+});
+
+module.exports = router;
