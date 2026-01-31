@@ -15,7 +15,7 @@ const { getPool } = require('./config/db');
 const frontendConfig = require('./config/frontendconfig');
 const cloudflareService = require('./services/cloudflareService');
 
-let cacheOptimization, cleanupScheduler, promotionCronService;
+let cacheOptimization, cleanupScheduler, promotionCronService, geoCdnSyncCron;
 
 try {
   cacheOptimization = require('./services/cacheOptimization');
@@ -23,25 +23,18 @@ try {
   console.warn('Cache optimization not available');
   cacheOptimization = null;
 }
-
 try {
   cleanupScheduler = require('./services/cleanupScheduler');
 } catch (e) {
   console.warn('Cleanup scheduler not available');
   cleanupScheduler = null;
 }
-
 try {
   promotionCronService = require('./services/promotionCronService');
 } catch (e) {
   console.warn('Promotion cron service not available');
   promotionCronService = null;
 }
-// backend/app.js - INTEGRATION SNIPPET
-// Add after line 38 (promotionCronService)
-
-let geoCdnSyncCron;
-
 try {
   geoCdnSyncCron = require('./services/geoCdnSyncCron');
 } catch (e) {
@@ -230,7 +223,7 @@ const sessionConfig = {
     maxAge: 7 * 24 * 60 * 60 * 1000,
     sameSite: isProduction ? 'none' : 'lax',
     path: '/',
-    domain: isProduction ? '.dailyvaibe.com' : undefined
+    domain: isProduction ? 'dailyvaibe.com' : undefined
   }
 };
 
@@ -247,46 +240,41 @@ if (!sessionConfig.secret || sessionConfig.secret === 'dev-secret-change-in-prod
 app.use(session(sessionConfig));
 
 const multipartRoutes = [
-  '/api/admin/createposts',
-  '/api/admin/edit',
-  '/api/admin/quotes',
-  '/api/admin/socialvideos',
-  '/api/admin/socialvideos/edit',
-  '/api/admin/customize'
+  '/api/admin/articles/create',
+  '/api/admin/articles/update',
+  '/api/admin/upload'
 ];
 
 app.use((req, res, next) => {
-  const isMultipart = multipartRoutes.some(route => req.path.startsWith(route));
-  if (isMultipart) {
-    return next();
+  if (multipartRoutes.some(route => req.path.startsWith(route))) {
+    next();
+  } else {
+    express.json({ limit: '50mb' })(req, res, next);
   }
-  express.json({ limit: '10mb' })(req, res, next);
 });
 
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 const adminAuth = (req, res, next) => {
-  if (req.session && req.session.admin) {
+  if (req.session && req.session.user && req.session.user.isAdmin) {
     return next();
   }
   res.status(401).json({
     success: false,
-    message: 'Unauthorized',
-    requiresAuth: true
+    message: 'Unauthorized: Admin access required'
   });
 };
 
 const routeManifest = [
+  { path: '/api/admin/articles', file: './routes/admin/articles.js', auth: true },
+  { path: '/api/admin/upload', file: './routes/admin/upload.js', auth: true },
   { path: '/api/admin/promotions', file: './routes/admin/promotions.js', auth: true },
-  { path: '/api/admin/createposts', file: './routes/admin/createposts.js', auth: true },
-  { path: '/api/admin/edit', file: './routes/admin/edit.js', auth: true },
+  { path: '/api/admin/carousel', file: './routes/admin/carousel.js', auth: true },
   { path: '/api/admin/quotes', file: './routes/admin/quotes.js', auth: true },
-  { path: '/api/admin/delete', file: './routes/admin/delete.js', auth: true },
-  { path: '/api/admin/customize', file: './routes/admin/customize.js', auth: true },
-  { path: '/api/admin/socialvideos/delete', file: './routes/admin/socialvideos/deleteSocialVideos.js', auth: true },
-  { path: '/api/admin/socialvideos/togglelive', file: './routes/admin/socialvideos/toggleLiveSocialVideos.js', auth: true },
-  { path: '/api/admin/socialvideos/edit', file: './routes/admin/socialvideos/editSocialVideos.js', auth: true },
-  { path: '/api/admin/socialvideos/retrieve', file: './routes/admin/socialvideos/retrieveSocialVideos.js', auth: true },
+  { path: '/api/admin/breaking', file: './routes/admin/breaking.js', auth: true },
+  { path: '/api/admin/trending', file: './routes/admin/trending.js', auth: true },
+  { path: '/api/admin/featured', file: './routes/admin/featured.js', auth: true },
+  { path: '/api/admin/media', file: './routes/admin/media.js', auth: true },
   { path: '/api/admin/socialvideos', file: './routes/admin/socialvideos/socialvideos.js', auth: true },
   { path: '/api/admin/adminmessages', file: './routes/admin/adminmessages.js', auth: true },
   { path: '/api/admin/retrieveposts', file: './routes/admin/retrieveposts.js', auth: true },
@@ -471,17 +459,18 @@ const shutdown = async (signal) => {
     await closePool();
     console.log('Clearing session store...');
     await new Promise(resolve => sessionStore.close(resolve));
-    
     if (cleanupScheduler) {
       console.log('Stopping cleanup scheduler...');
       cleanupScheduler.stop();
     }
-    
     if (promotionCronService) {
       console.log('Stopping promotion cron service...');
       promotionCronService.stopAll();
     }
-    
+    if (geoCdnSyncCron) {
+      console.log('Stopping geo CDN sync cron...');
+      geoCdnSyncCron.stop();
+    }
     console.log('Cleanup completed successfully');
     clearTimeout(shutdownTimeout);
     process.exit(0);
@@ -492,19 +481,10 @@ const shutdown = async (signal) => {
   }
 };
 
-// Add after line 508 (promotionCronService.startAll())
-
 if (geoCdnSyncCron && (isProduction || isStaging)) {
   geoCdnSyncCron.start().catch(err => {
     console.error('Failed to start geo CDN sync cron:', err);
   });
-}
-
-// Add to shutdown function after line 471 (promotionCronService.stopAll())
-
-if (geoCdnSyncCron) {
-  console.log('Stopping geo CDN sync cron...');
-  geoCdnSyncCron.stop();
 }
 
 process.on('SIGTERM', () => shutdown('SIGTERM'));
