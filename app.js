@@ -73,14 +73,27 @@ const {
   ALLOWED_ORIGINS
 } = frontendConfig;
 
+const NORMALIZED_ORIGINS = new Set([
+  'https://dailyvaibe.com',
+  'https://www.dailyvaibe.com',
+  'https://admin.dailyvaibe.com',
+  'https://api.dailyvaibe.com',
+  ...(isDevelopment ? [
+    'http://localhost:3000',
+    'http://localhost:5000',
+    'http://localhost:5173',
+    'http://localhost:5001'
+  ] : [])
+].map(o => o.replace(/\/$/, '')));
+
 const helmetConfig = {
   crossOriginEmbedderPolicy: false,
   crossOriginResourcePolicy: { policy: 'cross-origin' },
-  hsts: {
+  hsts: isProduction ? {
     maxAge: 31536000,
     includeSubDomains: true,
     preload: true
-  },
+  } : false,
   frameguard: { action: 'deny' },
   noSniff: true,
   xssFilter: true,
@@ -88,30 +101,7 @@ const helmetConfig = {
 };
 
 if (isProduction) {
-  helmetConfig.contentSecurityPolicy = {
-    directives: {
-      defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
-      imgSrc: ["'self'", "data:", "blob:", "https:", process.env.R2_PUBLIC_URL].filter(Boolean),
-      connectSrc: [
-        "'self'",
-        FRONTEND_URL,
-        CLIENT_URL,
-        ADMIN_URL,
-        API_DOMAIN,
-        process.env.R2_PUBLIC_URL,
-        ...ALLOWED_ORIGINS.filter(origin => origin && origin.startsWith('http'))
-      ].filter(Boolean),
-      fontSrc: ["'self'", "data:", "https:"],
-      objectSrc: ["'none'"],
-      mediaSrc: ["'self'", "blob:", "https:", process.env.R2_PUBLIC_URL].filter(Boolean),
-      frameSrc: ["'none'"],
-      workerSrc: ["'self'", "blob:"],
-      manifestSrc: ["'self'"],
-      upgradeInsecureRequests: []
-    }
-  };
+  helmetConfig.contentSecurityPolicy = false;
 } else {
   helmetConfig.contentSecurityPolicy = false;
 }
@@ -148,13 +138,15 @@ const corsOptions = {
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
     if (isDevelopment) return callback(null, true);
+    
     const normalizedOrigin = origin.replace(/\/$/, '');
-    const normalizedAllowed = ALLOWED_ORIGINS.map(o => o.replace(/\/$/, ''));
-    if (normalizedAllowed.includes(normalizedOrigin)) {
+    
+    if (NORMALIZED_ORIGINS.has(normalizedOrigin)) {
       return callback(null, true);
     }
-    console.warn(`CORS blocked: ${origin}`);
-    callback(new Error('Not allowed by CORS'));
+    
+    console.warn(`CORS rejected: ${origin}`);
+    return callback(null, false);
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
@@ -177,7 +169,6 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
 
 const staticDirs = ['uploads', 'public', 'assets', 'media'];
 
@@ -223,7 +214,7 @@ const sessionConfig = {
     maxAge: 7 * 24 * 60 * 60 * 1000,
     sameSite: isProduction ? 'none' : 'lax',
     path: '/',
-    domain: isProduction ? 'dailyvaibe.com' : undefined
+    domain: isProduction ? '.dailyvaibe.com' : undefined
   }
 };
 
