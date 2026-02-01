@@ -136,16 +136,31 @@ if (isProduction) {
 
 const corsOptions = {
   origin: (origin, callback) => {
-    if (!origin) return callback(null, true);
-    if (isDevelopment) return callback(null, true);
+    console.log('[CORS Check]', {
+      origin,
+      isDevelopment,
+      timestamp: new Date().toISOString()
+    });
+    
+    if (!origin) {
+      console.log('[CORS] No origin header - allowing (same-origin or server-to-server)');
+      return callback(null, true);
+    }
+    
+    if (isDevelopment) {
+      console.log('[CORS] Development mode - allowing all origins');
+      return callback(null, true);
+    }
     
     const normalizedOrigin = origin.replace(/\/$/, '');
     
     if (NORMALIZED_ORIGINS.has(normalizedOrigin)) {
+      console.log('[CORS] Origin ALLOWED:', normalizedOrigin);
       return callback(null, true);
     }
     
-    console.warn(`CORS rejected: ${origin}`);
+    console.warn('[CORS] Origin REJECTED:', normalizedOrigin);
+    console.warn('[CORS] Allowed origins:', Array.from(NORMALIZED_ORIGINS));
     return callback(null, false);
   },
   credentials: true,
@@ -246,17 +261,81 @@ app.use((req, res, next) => {
 
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-const adminAuth = (req, res, next) => {
-  if (req.session && req.session.user && req.session.user.isAdmin) {
-    return next();
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/admin') && req.path !== '/api/admin/auth') {
+    console.log('[Session Debug]', {
+      path: req.path,
+      method: req.method,
+      sessionID: req.sessionID,
+      hasSession: !!req.session,
+      adminId: req.session?.adminId,
+      sessionKeys: req.session ? Object.keys(req.session) : [],
+      cookies: req.headers.cookie ? 'present' : 'missing',
+      origin: req.headers.origin
+    });
   }
-  res.status(401).json({
-    success: false,
-    message: 'Unauthorized: Admin access required'
-  });
+  next();
+});
+
+const requireAdminAuth = async (req, res, next) => {
+  try {
+    const adminId = req.session?.adminId;
+
+    if (!adminId) {
+      return res.status(401).json({
+        success: false,
+        authenticated: false,
+        message: 'Authentication required'
+      });
+    }
+
+    const pool = getPool();
+    const adminResult = await pool.query(
+      `SELECT admin_id, first_name, last_name, email, phone, role, permissions, status
+       FROM admins
+       WHERE admin_id = $1 AND status = 'active'
+       LIMIT 1`,
+      [adminId]
+    );
+
+    if (adminResult.rows.length === 0) {
+      req.session.destroy((err) => {
+        if (err) console.error('[adminAuth] Session destroy error:', err);
+      });
+
+      return res.status(401).json({
+        success: false,
+        authenticated: false,
+        message: 'Invalid or inactive admin account'
+      });
+    }
+
+    const admin = adminResult.rows[0];
+    
+    req.admin = admin;
+    req.adminId = admin.admin_id;
+    req.userRole = admin.role;
+
+    next();
+
+  } catch (error) {
+    console.error('[adminAuth] Middleware error:', error);
+    return res.status(500).json({
+      success: false,
+      authenticated: false,
+      message: 'Authentication failed'
+    });
+  }
 };
 
 const routeManifest = [
+  { path: '/api/admin/system-services/analytics', file: './routes/admin/systemservices/analytics.js', auth: true },
+  { path: '/api/admin/system-services/cache', file: './routes/admin/systemservices/cacheManagement.js', auth: true },
+  { path: '/api/admin/system-services/cleanup', file: './routes/admin/systemservices/cleanup.js', auth: true },
+  { path: '/api/admin/system-services/db-opt', file: './routes/admin/systemservices/databaseOptimization.js', auth: true },
+  { path: '/api/admin/system-monitoring', file: './routes/admin/systemservices/systemMonitoring.js', auth: true },
+  { path: '/api/admin/socialvideos', file: './routes/admin/socialvideos/socialvideos.js', auth: true },
+  { path: '/api/admin/auth', file: './routes/admin/auth.js', auth: false },
   { path: '/api/admin/articles', file: './routes/admin/articles.js', auth: true },
   { path: '/api/admin/upload', file: './routes/admin/upload.js', auth: true },
   { path: '/api/admin/promotions', file: './routes/admin/promotions.js', auth: true },
@@ -266,7 +345,6 @@ const routeManifest = [
   { path: '/api/admin/trending', file: './routes/admin/trending.js', auth: true },
   { path: '/api/admin/featured', file: './routes/admin/featured.js', auth: true },
   { path: '/api/admin/media', file: './routes/admin/media.js', auth: true },
-  { path: '/api/admin/socialvideos', file: './routes/admin/socialvideos/socialvideos.js', auth: true },
   { path: '/api/admin/adminmessages', file: './routes/admin/adminmessages.js', auth: true },
   { path: '/api/admin/retrieveposts', file: './routes/admin/retrieveposts.js', auth: true },
   { path: '/api/admin/retrievequotes', file: './routes/admin/retrievequotes.js', auth: true },
@@ -274,19 +352,18 @@ const routeManifest = [
   { path: '/api/admin/password', file: './routes/admin/password.js', auth: true },
   { path: '/api/admin/userprofile', file: './routes/admin/userprofile.js', auth: true },
   { path: '/api/admin/geo', file: './routes/admin/geo.js', auth: true },
-  { path: '/api/admin/system-services/analytics', file: './routes/admin/systemservices/analytics.js', auth: true },
-  { path: '/api/admin/system-services/cache', file: './routes/admin/systemservices/cacheManagement.js', auth: true },
-  { path: '/api/admin/system-services/cleanup', file: './routes/admin/systemservices/cleanup.js', auth: true },
-  { path: '/api/admin/system-services/db-opt', file: './routes/admin/systemservices/databaseOptimization.js', auth: true },
-  { path: '/api/admin/system-monitoring', file: './routes/admin/systemservices/systemMonitoring.js', auth: true },
   { path: '/api/admin/userroles', file: './routes/admin/userroles.js', auth: true },
   { path: '/api/admin/categories', file: './routes/admin/categories.js', auth: true },
   { path: '/api/admin/analytics', file: './routes/admin/analytics.js', auth: true },
   { path: '/api/admin/pending', file: './routes/admin/pending.js', auth: true },
   { path: '/api/admin/permissions', file: './routes/admin/permissions.js', auth: true },
-  { path: '/api/admin/auth', file: './routes/admin/auth.js', auth: false },
+  { path: '/api/updates/breaking', file: './routes/api/updates/breaking.js', auth: false },
+  { path: '/api/updates/featured', file: './routes/api/updates/featured.js', auth: false },
+  { path: '/api/updates/pinned', file: './routes/api/updates/pinned.js', auth: false },
+  { path: '/api/updates/trending', file: './routes/api/trending.js', auth: false },
+  { path: '/api/client/auth', file: './routes/client/auth.js', auth: false },
+  { path: '/api/client', file: './routes/client/client.js', auth: false },
   { path: '/api/home', file: './routes/api/home.js', auth: false },
-  { path: '/api/client', file: './routes/api/client.js', auth: false },
   { path: '/api/articles', file: './routes/api/articles.js', auth: false },
   { path: '/api/categories', file: './routes/api/categories.js', auth: false },
   { path: '/api/footer-categories', file: './routes/api/footer-categories.js', auth: false },
@@ -300,13 +377,7 @@ const routeManifest = [
   { path: '/api/cookies', file: './routes/api/cookies.js', auth: false },
   { path: '/api/clientquotes', file: './routes/api/clientquotes.js', auth: false },
   { path: '/api/fetchall', file: './routes/api/fetchall.js', auth: false },
-  { path: '/api/updates/breaking', file: './routes/api/updates/breaking.js', auth: false },
-  { path: '/api/updates/featured', file: './routes/api/updates/featured.js', auth: false },
-  { path: '/api/updates/pinned', file: './routes/api/updates/pinned.js', auth: false },
-  { path: '/api/updates/trending', file: './routes/api/trending.js', auth: false },
-  { path: '/api/videos', file: './routes/api/videos.js', auth: false },
-  { path: '/api/client/auth', file: './routes/client/auth.js', auth: false },
-  { path: '/api/client', file: './routes/client/client.js', auth: false }
+  { path: '/api/videos', file: './routes/api/videos.js', auth: false }
 ];
 
 const routeStats = { loaded: 0, failed: 0 };
@@ -318,7 +389,7 @@ routeManifest.forEach(route => {
       throw new Error('Route module is undefined');
     }
     if (route.auth) {
-      app.use(route.path, adminAuth, routeModule);
+      app.use(route.path, requireAdminAuth, routeModule);
     } else {
       app.use(route.path, routeModule);
     }
@@ -333,7 +404,7 @@ routeManifest.forEach(route => {
         route: route.path
       });
     };
-    app.use(route.path, route.auth ? adminAuth : (req, res, next) => next(), fallback);
+    app.use(route.path, route.auth ? requireAdminAuth : (req, res, next) => next(), fallback);
   }
 });
 
