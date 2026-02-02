@@ -14,6 +14,7 @@ require('dotenv').config();
 const { getPool } = require('./config/db');
 const frontendConfig = require('./config/frontendconfig');
 const cloudflareService = require('./services/cloudflareService');
+const requireAdminAuth = require('./middleware/adminAuth');
 
 let cacheOptimization, cleanupScheduler, promotionCronService, geoCdnSyncCron;
 
@@ -220,7 +221,7 @@ const sessionConfig = {
   secret: process.env.SESSION_SECRET || 'dev-secret-change-in-production',
   name: 'dailyvaibe.sid',
   resave: false,
-  saveUninitialized: false,
+  saveUninitialized: true,
   rolling: true,
   proxy: true,
   cookie: {
@@ -244,6 +245,20 @@ if (!sessionConfig.secret || sessionConfig.secret === 'dev-secret-change-in-prod
 }
 
 app.use(session(sessionConfig));
+
+app.use((req, res, next) => {
+  console.log('[Session Init]', {
+    path: req.path,
+    method: req.method,
+    sessionID: req.sessionID,
+    sessionExists: !!req.session,
+    hasCookie: !!req.headers.cookie,
+    cookieHeader: req.headers.cookie?.substring(0, 50) + '...',
+    adminId: req.session?.adminId,
+    origin: req.headers.origin || 'no-origin'
+  });
+  next();
+});
 
 const multipartRoutes = [
   '/api/admin/articles/create',
@@ -276,57 +291,6 @@ app.use((req, res, next) => {
   }
   next();
 });
-
-const requireAdminAuth = async (req, res, next) => {
-  try {
-    const adminId = req.session?.adminId;
-
-    if (!adminId) {
-      return res.status(401).json({
-        success: false,
-        authenticated: false,
-        message: 'Authentication required'
-      });
-    }
-
-    const pool = getPool();
-    const adminResult = await pool.query(
-      `SELECT admin_id, first_name, last_name, email, phone, role, permissions, status
-       FROM admins
-       WHERE admin_id = $1 AND status = 'active'
-       LIMIT 1`,
-      [adminId]
-    );
-
-    if (adminResult.rows.length === 0) {
-      req.session.destroy((err) => {
-        if (err) console.error('[adminAuth] Session destroy error:', err);
-      });
-
-      return res.status(401).json({
-        success: false,
-        authenticated: false,
-        message: 'Invalid or inactive admin account'
-      });
-    }
-
-    const admin = adminResult.rows[0];
-    
-    req.admin = admin;
-    req.adminId = admin.admin_id;
-    req.userRole = admin.role;
-
-    next();
-
-  } catch (error) {
-    console.error('[adminAuth] Middleware error:', error);
-    return res.status(500).json({
-      success: false,
-      authenticated: false,
-      message: 'Authentication failed'
-    });
-  }
-};
 
 const routeManifest = [
   { path: '/api/admin/system-services/analytics', file: './routes/admin/systemservices/analytics.js', auth: true },
