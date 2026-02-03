@@ -24,18 +24,21 @@ try {
   console.warn('Cache optimization not available');
   cacheOptimization = null;
 }
+
 try {
   cleanupScheduler = require('./services/cleanupScheduler');
 } catch (e) {
   console.warn('Cleanup scheduler not available');
   cleanupScheduler = null;
 }
+
 try {
   promotionCronService = require('./services/promotionCronService');
 } catch (e) {
   console.warn('Promotion cron service not available');
   promotionCronService = null;
 }
+
 try {
   geoCdnSyncCron = require('./services/geoCdnSyncCron');
 } catch (e) {
@@ -137,32 +140,17 @@ if (isProduction) {
 
 const corsOptions = {
   origin: (origin, callback) => {
-    console.log('[CORS Check]', {
-      origin,
-      isDevelopment,
-      timestamp: new Date().toISOString()
-    });
-    
-    if (!origin) {
-      console.log('[CORS] No origin header - allowing (same-origin or server-to-server)');
-      return callback(null, true);
-    }
-    
-    if (isDevelopment) {
-      console.log('[CORS] Development mode - allowing all origins');
-      return callback(null, true);
-    }
+    if (!origin) return callback(null, true);
+    if (isDevelopment) return callback(null, true);
     
     const normalizedOrigin = origin.replace(/\/$/, '');
     
     if (NORMALIZED_ORIGINS.has(normalizedOrigin)) {
-      console.log('[CORS] Origin ALLOWED:', normalizedOrigin);
       return callback(null, true);
     }
     
-    console.warn('[CORS] Origin REJECTED:', normalizedOrigin);
-    console.warn('[CORS] Allowed origins:', Array.from(NORMALIZED_ORIGINS));
-    return callback(null, false);
+    console.warn(`CORS blocked: ${origin}`);
+    callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
@@ -185,6 +173,7 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 const staticDirs = ['uploads', 'public', 'assets', 'media'];
 
@@ -195,7 +184,7 @@ staticDirs.forEach(dir => {
       maxAge: isProduction ? '30d' : '0',
       etag: true,
       lastModified: true,
-      immutable: true,
+      immutable: isProduction,
       setHeaders: (res, filepath) => {
         if (filepath.match(/\.(jpg|jpeg|png|gif|webp|svg)$/i)) {
           res.setHeader('Cache-Control', 'public, max-age=2592000, immutable');
@@ -221,7 +210,7 @@ const sessionConfig = {
   secret: process.env.SESSION_SECRET || 'dev-secret-change-in-production',
   name: 'dailyvaibe.sid',
   resave: false,
-  saveUninitialized: true,
+  saveUninitialized: false,
   rolling: true,
   proxy: true,
   cookie: {
@@ -246,57 +235,32 @@ if (!sessionConfig.secret || sessionConfig.secret === 'dev-secret-change-in-prod
 
 app.use(session(sessionConfig));
 
-app.use((req, res, next) => {
-  console.log('[Session Init]', {
-    path: req.path,
-    method: req.method,
-    sessionID: req.sessionID,
-    sessionExists: !!req.session,
-    hasCookie: !!req.headers.cookie,
-    cookieHeader: req.headers.cookie?.substring(0, 50) + '...',
-    adminId: req.session?.adminId,
-    origin: req.headers.origin || 'no-origin'
-  });
-  next();
-});
-
 const multipartRoutes = [
-  '/api/admin/articles/create',
-  '/api/admin/articles/update',
-  '/api/admin/upload'
+  '/api/admin/createposts',
+  '/api/admin/edit',
+  '/api/admin/quotes',
+  '/api/admin/upload',
+  '/api/admin/promotions',
+  '/api/admin/socialvideos'
 ];
 
 app.use((req, res, next) => {
   if (multipartRoutes.some(route => req.path.startsWith(route))) {
     next();
   } else {
-    express.json({ limit: '50mb' })(req, res, next);
-  }
-});
-
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-
-app.use((req, res, next) => {
-  if (req.path.startsWith('/api/admin') && req.path !== '/api/admin/auth') {
-    console.log('[Session Debug]', {
-      path: req.path,
-      method: req.method,
-      sessionID: req.sessionID,
-      hasSession: !!req.session,
-      adminId: req.session?.adminId,
-      sessionKeys: req.session ? Object.keys(req.session) : [],
-      cookies: req.headers.cookie ? 'present' : 'missing',
-      origin: req.headers.origin
+    express.json({ limit: '50mb' })(req, res, () => {
+      express.urlencoded({ extended: true, limit: '50mb' })(req, res, next);
     });
   }
-  next();
 });
 
+// VERIFIED ROUTES ONLY - Removed phantom routes: carousel, breaking, trending, featured, media
 const routeManifest = [
   // Admin routes (authenticated)
+  { path: '/api/admin/admin', file: './routes/admin/admin.js', auth: true },
   { path: '/api/admin/auth', file: './routes/admin/auth.js', auth: false },
-  { path: '/api/admin/createposts', file: './routes/admin/createposts/createposts.js', auth: true },
-  { path: '/api/admin/categories', file: './routes/admin/createposts/categories.js', auth: true },
+  { path: '/api/admin/createposts', file: './routes/admin/createposts.js', auth: true },
+  { path: '/api/admin/categories', file: './routes/admin/categories.js', auth: true },
   { path: '/api/admin/edit', file: './routes/admin/edit.js', auth: true },
   { path: '/api/admin/quotes', file: './routes/admin/quotes.js', auth: true },
   { path: '/api/admin/delete', file: './routes/admin/delete.js', auth: true },
@@ -320,7 +284,6 @@ const routeManifest = [
   { path: '/api/admin/system-services/db-opt', file: './routes/admin/systemservices/databaseOptimization.js', auth: true },
   { path: '/api/admin/system-monitoring', file: './routes/admin/systemservices/systemMonitoring.js', auth: true },
   { path: '/api/admin/userroles', file: './routes/admin/userroles.js', auth: true },
-  
   { path: '/api/admin/analytics', file: './routes/admin/analytics.js', auth: true },
   { path: '/api/admin/pending', file: './routes/admin/pending.js', auth: true },
   { path: '/api/admin/permissions', file: './routes/admin/permissions.js', auth: true },
@@ -331,7 +294,8 @@ const routeManifest = [
   { path: '/api/updates/pinned', file: './routes/api/updates/pinned.js', auth: false },
   { path: '/api/updates/trending', file: './routes/api/trending.js', auth: false },
   { path: '/api/client/auth', file: './routes/client/auth.js', auth: false },
-  { path: '/api/client', file: './routes/client/client.js', auth: false },
+  //{ path: '/api/client', file: './routes/client/client.js', auth: false },
+  { path: '/api/client', file: './routes/api/client.js', auth: false },
   { path: '/api/home', file: './routes/api/home.js', auth: false },
   { path: '/api/articles', file: './routes/api/articles.js', auth: false },
   { path: '/api/categories', file: './routes/api/categories.js', auth: false },
