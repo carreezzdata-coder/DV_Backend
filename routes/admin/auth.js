@@ -1,6 +1,6 @@
 // backend/routes/admin/auth.js
 const express = require('express');
-const bcrypt = require('bcryptjs'); // Using bcryptjs - MUST match user.js
+const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const { getPool } = require('../../config/db');
 const { FRONTEND_URL, CLIENT_URL, ADMIN_URL, API_DOMAIN, ALLOWED_ORIGINS, isOriginAllowed } = require('../../config/frontendconfig');
@@ -8,6 +8,9 @@ const router = express.Router();
 
 const generateCSRFToken = () => crypto.randomBytes(32).toString('hex');
 
+// ============================================================================
+// LOGIN
+// ============================================================================
 router.post('/login', async (req, res) => {
   let pool;
   try {
@@ -51,20 +54,37 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    console.log('Admin login attempt for:', trimmedIdentifier);
+    console.log('[Admin Login] Attempt for:', trimmedIdentifier);
 
+    // ✅ FIX: Cast ENUM types to text to ensure proper string handling
     const adminResult = await pool.query(
-      `SELECT admin_id, first_name, last_name, email, phone, role, permissions,
-              password_hash, last_login, status, username
+      `SELECT 
+        admin_id, 
+        first_name, 
+        last_name, 
+        email, 
+        phone, 
+        role::text as role,
+        permissions,
+        password_hash, 
+        last_login, 
+        status::text as status,
+        username,
+        role_id
        FROM admins
        WHERE (email = $1 OR phone = $1 OR username = $1) AND status = 'active'
        LIMIT 1`,
       [trimmedIdentifier]
     );
 
-    console.log('Admin query result:', adminResult.rows.length > 0 ? 'Found admin' : 'No admin found');
+    console.log('[Admin Login] Query result:', {
+      found: adminResult.rows.length > 0,
+      role: adminResult.rows[0]?.role,
+      status: adminResult.rows[0]?.status
+    });
 
     if (adminResult.rows.length === 0) {
+      console.log('[Admin Login] No matching admin found');
       return res.status(401).json({
         success: false,
         authenticated: false,
@@ -76,18 +96,22 @@ router.post('/login', async (req, res) => {
     }
 
     const admin = adminResult.rows[0];
-    console.log('Found admin:', admin.username || admin.email);
-    console.log('Password hash from DB:', admin.password_hash.substring(0, 20) + '...');
+    console.log('[Admin Login] Found admin:', {
+      adminId: admin.admin_id,
+      email: admin.email,
+      role: admin.role,
+      username: admin.username
+    });
 
-    // Password verification using bcryptjs (MUST match user.js)
+    // ✅ Password verification using bcryptjs
     let isValidPassword = false;
 
     try {
       isValidPassword = await bcrypt.compare(trimmedPassword, admin.password_hash);
-      console.log('Password validation result:', isValidPassword);
+      console.log('[Admin Login] Password validation result:', isValidPassword);
     } catch (bcryptError) {
-      console.error('Bcrypt comparison error:', bcryptError.message);
-      console.error('Stack:', bcryptError.stack);
+      console.error('[Admin Login] Bcrypt comparison error:', bcryptError.message);
+      console.error('[Admin Login] Stack:', bcryptError.stack);
       return res.status(500).json({
         success: false,
         authenticated: false,
@@ -99,6 +123,7 @@ router.post('/login', async (req, res) => {
     }
 
     if (!isValidPassword) {
+      console.log('[Admin Login] Invalid password');
       return res.status(401).json({
         success: false,
         authenticated: false,
@@ -109,9 +134,10 @@ router.post('/login', async (req, res) => {
       });
     }
 
+    // ✅ Regenerate session for security
     req.session.regenerate(async (err) => {
       if (err) {
-        console.error('Session regeneration error:', err);
+        console.error('[Admin Login] Session regeneration error:', err);
         return res.status(500).json({
           success: false,
           authenticated: false,
@@ -123,21 +149,26 @@ router.post('/login', async (req, res) => {
       }
 
       try {
+        // ✅ Store admin info in session
         req.session.adminId = admin.admin_id;
         req.session.loginTime = new Date().toISOString();
 
         const csrfToken = generateCSRFToken();
         req.session.csrfToken = csrfToken;
 
+        // ✅ Update last login
         await pool.query(
           'UPDATE admins SET last_login = NOW() WHERE admin_id = $1',
           [admin.admin_id]
         );
 
-        console.log('Admin login successful:', {
+        // ✅ FIX: Normalize role to lowercase string
+        const normalizedRole = admin.role ? admin.role.toLowerCase() : 'moderator';
+
+        console.log('[Admin Login] Login successful:', {
           adminId: admin.admin_id,
           email: admin.email,
-          role: admin.role
+          role: normalizedRole
         });
 
         const userResponse = {
@@ -146,7 +177,7 @@ router.post('/login', async (req, res) => {
           last_name: admin.last_name,
           email: admin.email,
           phone: admin.phone,
-          role: admin.role,
+          role: normalizedRole,  // ✅ Send normalized role
           permissions: admin.permissions || [],
           last_login: new Date().toISOString(),
           status: admin.status
@@ -161,7 +192,7 @@ router.post('/login', async (req, res) => {
           message: 'Login successful'
         });
       } catch (updateError) {
-        console.error('Error updating last login:', updateError);
+        console.error('[Admin Login] Error updating last login:', updateError);
         return res.status(500).json({
           success: false,
           authenticated: false,
@@ -174,7 +205,8 @@ router.post('/login', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Login error details:', error);
+    console.error('[Admin Login] Login error:', error);
+    console.error('[Admin Login] Error stack:', error.stack);
     return res.status(500).json({
       success: false,
       authenticated: false,
@@ -186,12 +218,15 @@ router.post('/login', async (req, res) => {
   }
 });
 
+// ============================================================================
+// LOGOUT
+// ============================================================================
 router.post('/logout', (req, res) => {
-  console.log('Admin logout attempt for session:', req.session.id);
+  console.log('[Admin Logout] Attempting logout for session:', req.session?.id);
 
   req.session.destroy(err => {
     if (err) {
-      console.error('Session destroy error:', err);
+      console.error('[Admin Logout] Session destroy error:', err);
       return res.status(500).json({
         success: false,
         authenticated: false,
@@ -202,7 +237,7 @@ router.post('/logout', (req, res) => {
       });
     }
 
-    console.log('Admin logout successful - session destroyed');
+    console.log('[Admin Logout] Logout successful - session destroyed');
 
     res.status(200).json({
       success: true,
@@ -215,18 +250,22 @@ router.post('/logout', (req, res) => {
   });
 });
 
+// ============================================================================
+// VERIFY SESSION
+// ============================================================================
 router.get('/verify', async (req, res) => {
   try {
     const pool = getPool();
     const adminId = req.session?.adminId;
 
-    console.log('Admin session verification:', {
+    console.log('[Admin Verify] Session verification:', {
       hasSession: !!req.session,
       hasAdminId: !!adminId,
       sessionId: req.session?.id
     });
 
     if (!adminId) {
+      console.log('[Admin Verify] No adminId in session');
       return res.status(401).json({
         success: false,
         authenticated: false,
@@ -237,20 +276,35 @@ router.get('/verify', async (req, res) => {
       });
     }
 
+    // ✅ FIX: Cast ENUM types to text
     const adminResult = await pool.query(
-      `SELECT admin_id, first_name, last_name, email, phone, role, permissions,
-              last_login, status
+      `SELECT 
+        admin_id, 
+        first_name, 
+        last_name, 
+        email, 
+        phone, 
+        role::text as role,
+        permissions,
+        last_login, 
+        status::text as status,
+        role_id
        FROM admins
        WHERE admin_id = $1 AND status = 'active'
        LIMIT 1`,
       [adminId]
     );
 
-    console.log('Admin verification query result:', adminResult.rows.length > 0 ? 'Valid admin found' : 'Admin not found/inactive');
+    console.log('[Admin Verify] Query result:', {
+      found: adminResult.rows.length > 0,
+      role: adminResult.rows[0]?.role,
+      status: adminResult.rows[0]?.status
+    });
 
     if (adminResult.rows.length === 0) {
+      console.log('[Admin Verify] Admin not found or inactive');
       req.session.destroy((err) => {
-        if (err) console.error('Error destroying invalid session:', err);
+        if (err) console.error('[Admin Verify] Error destroying invalid session:', err);
       });
 
       return res.status(401).json({
@@ -265,11 +319,19 @@ router.get('/verify', async (req, res) => {
 
     const admin = adminResult.rows[0];
 
+    // ✅ Generate CSRF token if missing
     if (!req.session.csrfToken) {
       req.session.csrfToken = generateCSRFToken();
     }
 
-    console.log('Admin session verified successfully for:', admin.admin_id, 'with role:', admin.role);
+    // ✅ FIX: Normalize role to lowercase string
+    const normalizedRole = admin.role ? admin.role.toLowerCase() : 'moderator';
+
+    console.log('[Admin Verify] Session verified successfully:', {
+      adminId: admin.admin_id,
+      role: normalizedRole,
+      email: admin.email
+    });
 
     return res.status(200).json({
       success: true,
@@ -280,7 +342,7 @@ router.get('/verify', async (req, res) => {
         last_name: admin.last_name,
         email: admin.email,
         phone: admin.phone,
-        role: admin.role,
+        role: normalizedRole,  // ✅ Send normalized role
         permissions: admin.permissions || [],
         last_login: admin.last_login,
         status: admin.status
@@ -291,7 +353,8 @@ router.get('/verify', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Admin session verification error:', error);
+    console.error('[Admin Verify] Session verification error:', error);
+    console.error('[Admin Verify] Error stack:', error.stack);
     return res.status(500).json({
       success: false,
       authenticated: false,
