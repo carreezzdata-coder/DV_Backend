@@ -11,14 +11,20 @@ const getUserRole = async (adminId) => {
   try {
     const pool = getPool();
     const result = await pool.query(
-      'SELECT role, status FROM admins WHERE admin_id = $1',
+      'SELECT role::text as role, status::text as status FROM admins WHERE admin_id = $1',
       [adminId]
     );
     
     if (result.rows.length === 0) return null;
     if (result.rows[0].status !== 'active') return null;
     
-    return result.rows[0].role.toLowerCase();
+    const role = result.rows[0].role;
+    if (!role || typeof role !== 'string') {
+      console.error(`[rolePermissions] Invalid role for admin ${adminId}:`, role);
+      return null;
+    }
+    
+    return role.toLowerCase().trim();
   } catch (error) {
     console.error('[rolePermissions] getUserRole error:', error);
     return null;
@@ -26,7 +32,7 @@ const getUserRole = async (adminId) => {
 };
 
 const getRoleLevel = (role) => {
-  const normalizedRole = role ? role.toLowerCase() : '';
+  const normalizedRole = (role && typeof role === 'string') ? role.toLowerCase().trim() : '';
   return ROLE_HIERARCHY[normalizedRole] || 0;
 };
 
@@ -37,7 +43,7 @@ const canManageRole = (actorRole, targetRole) => {
 };
 
 const getAssignableRoles = (role) => {
-  const normalizedRole = role ? role.toLowerCase() : '';
+  const normalizedRole = (role && typeof role === 'string') ? role.toLowerCase().trim() : '';
   const userLevel = getRoleLevel(normalizedRole);
   
   return Object.entries(ROLE_HIERARCHY)
@@ -47,62 +53,62 @@ const getAssignableRoles = (role) => {
 };
 
 const canPublishDirectly = (role) => {
-  const normalizedRole = role ? role.toLowerCase() : '';
+  const normalizedRole = (role && typeof role === 'string') ? role.toLowerCase().trim() : '';
   return ['super_admin', 'admin', 'editor'].includes(normalizedRole);
 };
 
 const canApprove = (role) => {
-  const normalizedRole = role ? role.toLowerCase() : '';
+  const normalizedRole = (role && typeof role === 'string') ? role.toLowerCase().trim() : '';
   return ['super_admin', 'admin', 'editor'].includes(normalizedRole);
 };
 
 const canHardDelete = (role) => {
-  const normalizedRole = role ? role.toLowerCase() : '';
+  const normalizedRole = (role && typeof role === 'string') ? role.toLowerCase().trim() : '';
   return ['super_admin', 'admin'].includes(normalizedRole);
 };
 
 const canArchive = (role) => {
-  const normalizedRole = role ? role.toLowerCase() : '';
+  const normalizedRole = (role && typeof role === 'string') ? role.toLowerCase().trim() : '';
   return ['super_admin', 'admin', 'editor', 'moderator'].includes(normalizedRole);
 };
 
 const canEditAny = (role) => {
-  const normalizedRole = role ? role.toLowerCase() : '';
+  const normalizedRole = (role && typeof role === 'string') ? role.toLowerCase().trim() : '';
   return ['super_admin', 'admin', 'editor'].includes(normalizedRole);
 };
 
 const canManageUsers = (role) => {
-  const normalizedRole = role ? role.toLowerCase() : '';
+  const normalizedRole = (role && typeof role === 'string') ? role.toLowerCase().trim() : '';
   return ['super_admin', 'admin'].includes(normalizedRole);
 };
 
 const canViewUsers = (role) => {
-  const normalizedRole = role ? role.toLowerCase() : '';
+  const normalizedRole = (role && typeof role === 'string') ? role.toLowerCase().trim() : '';
   return ['super_admin', 'admin', 'editor', 'moderator'].includes(normalizedRole);
 };
 
 const canCreateUsers = (role) => {
-  const normalizedRole = role ? role.toLowerCase() : '';
+  const normalizedRole = (role && typeof role === 'string') ? role.toLowerCase().trim() : '';
   return ['super_admin', 'admin'].includes(normalizedRole);
 };
 
 const canEditUsers = (role) => {
-  const normalizedRole = role ? role.toLowerCase() : '';
+  const normalizedRole = (role && typeof role === 'string') ? role.toLowerCase().trim() : '';
   return ['super_admin', 'admin'].includes(normalizedRole);
 };
 
 const canDeleteUsers = (role) => {
-  const normalizedRole = role ? role.toLowerCase() : '';
+  const normalizedRole = (role && typeof role === 'string') ? role.toLowerCase().trim() : '';
   return ['super_admin', 'admin'].includes(normalizedRole);
 };
 
 const canResetPasswords = (role) => {
-  const normalizedRole = role ? role.toLowerCase() : '';
+  const normalizedRole = (role && typeof role === 'string') ? role.toLowerCase().trim() : '';
   return ['super_admin', 'admin'].includes(normalizedRole);
 };
 
 const canManageRoles = (role) => {
-  const normalizedRole = role ? role.toLowerCase() : '';
+  const normalizedRole = (role && typeof role === 'string') ? role.toLowerCase().trim() : '';
   return ['super_admin', 'admin'].includes(normalizedRole);
 };
 
@@ -127,8 +133,8 @@ const requireRole = (allowedRoles) => {
         });
       }
 
-      const normalizedRole = role.toLowerCase();
-      const normalizedAllowedRoles = allowedRoles.map(r => r.toLowerCase());
+      const normalizedRole = role.toLowerCase().trim();
+      const normalizedAllowedRoles = allowedRoles.map(r => r.toLowerCase().trim());
 
       if (!normalizedAllowedRoles.includes(normalizedRole)) {
         return res.status(403).json({
@@ -169,7 +175,7 @@ const requirePublisher = async (req, res, next) => {
       });
     }
 
-    const normalizedRole = role.toLowerCase();
+    const normalizedRole = role.toLowerCase().trim();
     req.userRole = normalizedRole;
     req.canPublish = canPublishDirectly(normalizedRole);
     next();
@@ -194,7 +200,7 @@ const requireApprover = async (req, res, next) => {
     }
 
     const role = await getUserRole(adminId);
-    const normalizedRole = role ? role.toLowerCase() : '';
+    const normalizedRole = (role && typeof role === 'string') ? role.toLowerCase().trim() : '';
 
     if (!role || !canApprove(normalizedRole)) {
       return res.status(403).json({
@@ -227,7 +233,7 @@ const requireEditor = async (req, res, next) => {
     }
 
     const role = await getUserRole(adminId);
-    const normalizedRole = role ? role.toLowerCase() : '';
+    const normalizedRole = (role && typeof role === 'string') ? role.toLowerCase().trim() : '';
 
     if (!role) {
       return res.status(401).json({
@@ -245,7 +251,7 @@ const requireEditor = async (req, res, next) => {
     if (normalizedRole === 'moderator' && newsId) {
       const pool = getPool();
       const result = await pool.query(
-        'SELECT author_id, status FROM news WHERE news_id = $1',
+        'SELECT author_id, status::text as status FROM news WHERE news_id = $1',
         [newsId]
       );
 
@@ -303,7 +309,7 @@ const requireDeleter = async (req, res, next) => {
     }
 
     const role = await getUserRole(adminId);
-    const normalizedRole = role ? role.toLowerCase() : '';
+    const normalizedRole = (role && typeof role === 'string') ? role.toLowerCase().trim() : '';
 
     if (!role) {
       return res.status(401).json({
@@ -349,7 +355,7 @@ const requireUserManager = async (req, res, next) => {
     }
 
     const role = await getUserRole(adminId);
-    const normalizedRole = role ? role.toLowerCase() : '';
+    const normalizedRole = (role && typeof role === 'string') ? role.toLowerCase().trim() : '';
 
     if (!role || !canManageUsers(normalizedRole)) {
       return res.status(403).json({
