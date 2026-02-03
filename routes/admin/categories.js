@@ -1,77 +1,71 @@
-// backend/routes/admin/categories.js
 const express = require('express');
-const { FRONTEND_URL, CLIENT_URL, ADMIN_URL, API_DOMAIN, ALLOWED_ORIGINS, isOriginAllowed } = require('../../config/frontendconfig');
-const requireAdminAuth = require('../../middleware/adminAuth');
-const { requirePublisher, requireApprover, requireEditor, requireDeleter } = require('../../middleware/rolePermissions');
 const router = express.Router();
-const { getPool } = require('../../config/db');
 
-// EXACT metadata from createposts.js
 const CATEGORY_GROUP_METADATA = {
-  1: { // World parent_id
+  1: {
     groupKey: 'live-world',
     title: 'Live & World',
     icon: '🌍',
     description: 'Global news and international affairs',
     color: '#2563eb'
   },
-  14: { // Counties parent_id
+  14: {
     groupKey: 'counties',
     title: 'Counties',
     icon: '🏢',
     description: 'County-level news and developments',
     color: '#7c3aed'
   },
-  15: { // Politics parent_id
+  15: {
     groupKey: 'politics',
     title: 'Politics',
     icon: '🏛️',
     description: 'Political news and analysis',
     color: '#dc2626'
   },
-  16: { // Business parent_id
+  16: {
     groupKey: 'business',
     title: 'Business',
     icon: '💼',
     description: 'Business, economy and finance',
     color: '#059669'
   },
-  17: { // Opinion parent_id
+  17: {
     groupKey: 'opinion',
     title: 'Opinion',
     icon: '💭',
     description: 'Opinion pieces and editorials',
     color: '#ea580c'
   },
-  18: { // Sports parent_id
+  18: {
     groupKey: 'sports',
     title: 'Sports',
     icon: '⚽',
     description: 'Sports news and events',
     color: '#0891b2'
   },
-  19: { // Life & Style parent_id
+  19: {
     groupKey: 'lifestyle',
     title: 'Life & Style',
     icon: '🎭',
     description: 'Lifestyle, fashion and culture',
     color: '#db2777'
   },
-  20: { // Entertainment parent_id
+  20: {
     groupKey: 'entertainment',
     title: 'Entertainment',
     icon: '🎉',
     description: 'Entertainment and celebrity news',
     color: '#8b5cf6'
   },
-  21: { // Technology parent_id
+  21: {
     groupKey: 'tech',
     title: 'Technology',
     icon: '💻',
     description: 'Technology news and innovations',
     color: '#0284c7'
   },
-  22: { // Other parent_id
+  22: {
     groupKey: 'other',
     title: 'Other',
     icon: '📌',
@@ -81,10 +75,32 @@ const CATEGORY_GROUP_METADATA = {
 };
 
 router.get('/', async (req, res) => {
-  try {
-    console.log('[Backend Categories] GET request received');
-    const pool = getPool();
+  console.log('=== CATEGORIES GET REQUEST RECEIVED ===');
+  console.log('Timestamp:', new Date().toISOString());
+  console.log('URL:', req.url);
+  console.log('Method:', req.method);
+  console.log('Headers:', JSON.stringify(req.headers, null, 2));
 
+  let pool;
+  
+  try {
+    console.log('[Step 1] Getting database pool...');
+    const { getPool } = require('../../config/db');
+    pool = getPool();
+    
+    if (!pool) {
+      console.error('[Step 1] FAILED: Pool is null or undefined');
+      return res.status(500).json({
+        success: false,
+        message: 'Database connection pool not available',
+        error: 'Pool is null',
+        step: 'get_pool'
+      });
+    }
+    
+    console.log('[Step 1] SUCCESS: Pool obtained');
+
+    console.log('[Step 2] Executing database query...');
     const categoriesQuery = `
       SELECT
         c.category_id,
@@ -101,35 +117,53 @@ router.get('/', async (req, res) => {
     `;
 
     const result = await pool.query(categoriesQuery);
-    console.log(`[Backend Categories] Query returned ${result.rows.length} total rows`);
+    console.log('[Step 2] SUCCESS: Query executed');
+    console.log(`[Step 2] Rows returned: ${result.rows.length}`);
+    
+    if (result.rows.length > 0) {
+      console.log('[Step 2] First row sample:', JSON.stringify(result.rows[0], null, 2));
+    }
 
     if (result.rows.length === 0) {
+      console.warn('[Step 2] WARNING: No categories found in database');
       return res.status(200).json({
         success: true,
         groups: {},
         total_categories: 0,
-        message: 'No categories found'
+        message: 'No categories found in database'
       });
+    }
+
+    console.log('[Step 3] Processing categories...');
+    const parents = result.rows.filter(cat => cat.parent_id === null);
+    const children = result.rows.filter(cat => cat.parent_id !== null);
+
+    console.log(`[Step 3] Parents found: ${parents.length}`);
+    console.log(`[Step 3] Children found: ${children.length}`);
+    
+    if (parents.length > 0) {
+      console.log('[Step 3] Parent IDs:', parents.map(p => p.category_id).join(', '));
     }
 
     const groups = {};
     let totalCategories = 0;
 
-    const parents = result.rows.filter(cat => cat.parent_id === null);
-    const children = result.rows.filter(cat => cat.parent_id !== null);
-
-    console.log(`[Backend Categories] Found ${parents.length} parents, ${children.length} children`);
-
+    console.log('[Step 4] Building groups...');
     for (const parent of parents) {
+      console.log(`[Step 4] Processing parent: ${parent.category_id} (${parent.name})`);
+      
       const metadata = CATEGORY_GROUP_METADATA[parent.category_id];
 
       if (!metadata) {
-        console.warn(`[Backend Categories] No metadata for parent ${parent.category_id} (${parent.name})`);
+        console.warn(`[Step 4] WARNING: No metadata for parent ID ${parent.category_id}`);
+        console.warn(`[Step 4] Available metadata IDs: ${Object.keys(CATEGORY_GROUP_METADATA).join(', ')}`);
         continue;
       }
 
       const parentChildren = children.filter(cat => cat.parent_id === parent.category_id);
       const groupKey = metadata.groupKey;
+
+      console.log(`[Step 4] Group "${groupKey}" has ${parentChildren.length} children`);
 
       groups[groupKey] = {
         title: metadata.title,
@@ -157,15 +191,15 @@ router.get('/', async (req, res) => {
       };
 
       totalCategories += parentChildren.length;
-      console.log(`[Backend Categories] Group ${groupKey}: ${parentChildren.length} categories`);
     }
 
-    // Handle orphaned categories
+    console.log('[Step 5] Handling orphaned categories...');
     const validParentIds = parents.map(p => p.category_id);
     const orphanedChildren = children.filter(cat => !validParentIds.includes(cat.parent_id));
 
     if (orphanedChildren.length > 0) {
-      console.warn(`[Backend Categories] ${orphanedChildren.length} orphaned categories`);
+      console.warn(`[Step 5] Found ${orphanedChildren.length} orphaned categories`);
+      console.warn(`[Step 5] Orphaned parent IDs: ${[...new Set(orphanedChildren.map(c => c.parent_id))].join(', ')}`);
 
       if (!groups['other']) {
         groups['other'] = {
@@ -193,9 +227,12 @@ router.get('/', async (req, res) => {
       totalCategories += orphanedChildren.length;
     }
 
-    console.log(`[Backend Categories] Returning ${totalCategories} categories in ${Object.keys(groups).length} groups`);
+    console.log('[Step 6] Preparing response...');
+    console.log(`[Step 6] Total groups: ${Object.keys(groups).length}`);
+    console.log(`[Step 6] Total categories: ${totalCategories}`);
+    console.log(`[Step 6] Group keys: ${Object.keys(groups).join(', ')}`);
 
-    return res.status(200).json({
+    const response = {
       success: true,
       groups: groups,
       total_categories: totalCategories,
@@ -206,14 +243,34 @@ router.get('/', async (req, res) => {
         has_other_group: 'other' in groups,
         timestamp: new Date().toISOString()
       }
-    });
+    };
+
+    console.log('[Step 7] Sending response...');
+    console.log('[Step 7] SUCCESS - Response prepared');
+    
+    return res.status(200).json(response);
 
   } catch (error) {
-    console.error('[Backend Categories] Error:', error);
+    console.error('=== CATEGORIES ERROR ===');
+    console.error('Error name:', error.name);
+    console.error('Error message:', error.message);
+    console.error('Error stack:', error.stack);
+    
+    if (error.code) {
+      console.error('Error code:', error.code);
+    }
+    
+    if (error.detail) {
+      console.error('Error detail:', error.detail);
+    }
+
     return res.status(500).json({
       success: false,
-      message: 'Internal server error',
-      error: error.message
+      message: 'Internal server error while fetching categories',
+      error: error.message,
+      errorCode: error.code || 'UNKNOWN',
+      errorName: error.name || 'Error',
+      timestamp: new Date().toISOString()
     });
   }
 });
