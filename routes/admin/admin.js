@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getPool } = require('../../config/db');
 const requireAdminAuth = require('../../middleware/adminAuth');
-const { getUserRole, canManageUsers } = require('../../middleware/rolePermissions');
+const { canManageUsers } = require('../../middleware/rolePermissions');
 
 const { FRONTEND_URL, CLIENT_URL, ADMIN_URL, API_DOMAIN, ALLOWED_ORIGINS, isOriginAllowed } = require('../../config/frontendconfig');
 
@@ -13,12 +13,21 @@ router.get('/dashboard/stats', requireAdminAuth, async (req, res) => {
   
   try {
     const adminId = req.adminId;
-    const userRole = await getUserRole(adminId);
+    const userRole = req.userRole;
+
+    if (!userRole) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid user role'
+      });
+    }
+
+    const normalizedRole = userRole.toLowerCase().trim();
 
     let statsQuery;
     let queryParams;
 
-    if (['super_admin', 'admin'].includes(userRole)) {
+    if (['super_admin', 'admin'].includes(normalizedRole)) {
       statsQuery = `
         SELECT 
           COUNT(DISTINCT n.news_id) as total_posts,
@@ -34,7 +43,7 @@ router.get('/dashboard/stats', requireAdminAuth, async (req, res) => {
         LEFT JOIN news_approval na ON n.news_id = na.news_id
       `;
       queryParams = [];
-    } else if (userRole === 'editor') {
+    } else if (normalizedRole === 'editor') {
       statsQuery = `
         SELECT 
           COUNT(DISTINCT n.news_id) as total_posts,
@@ -69,10 +78,32 @@ router.get('/dashboard/stats', requireAdminAuth, async (req, res) => {
       queryParams = [adminId];
     }
 
+    console.log('[Dashboard Stats] Executing query for role:', normalizedRole);
     const statsResult = await pool.query(statsQuery, queryParams);
 
+    if (!statsResult.rows || statsResult.rows.length === 0) {
+      console.warn('[Dashboard Stats] No data returned from query');
+      return res.status(200).json({
+        success: true,
+        stats: {
+          total_posts: 0,
+          published_posts: 0,
+          draft_posts: 0,
+          archived_posts: 0,
+          pending_approvals: 0,
+          total_views: 0,
+          total_likes: 0,
+          total_comments: 0,
+          total_shares: 0,
+          total_users: 0,
+          user_role: normalizedRole,
+          is_global_stats: ['super_admin', 'admin'].includes(normalizedRole)
+        }
+      });
+    }
+
     let totalUsers = 0;
-    if (canManageUsers(userRole)) {
+    if (canManageUsers(normalizedRole)) {
       const usersResult = await pool.query(
         `SELECT COUNT(*) as total FROM admins WHERE status = 'active'`
       );
@@ -90,9 +121,11 @@ router.get('/dashboard/stats', requireAdminAuth, async (req, res) => {
       total_comments: parseInt(statsResult.rows[0].total_comments) || 0,
       total_shares: parseInt(statsResult.rows[0].total_shares) || 0,
       total_users: totalUsers,
-      user_role: userRole,
-      is_global_stats: ['super_admin', 'admin'].includes(userRole)
+      user_role: normalizedRole,
+      is_global_stats: ['super_admin', 'admin'].includes(normalizedRole)
     };
+
+    console.log('[Dashboard Stats] Returning stats:', stats);
 
     return res.status(200).json({
       success: true,
@@ -102,6 +135,7 @@ router.get('/dashboard/stats', requireAdminAuth, async (req, res) => {
 
   } catch (error) {
     console.error('[Admin Dashboard] Stats error:', error);
+    console.error('[Admin Dashboard] Error stack:', error.stack);
     return res.status(500).json({
       success: false,
       message: 'Internal server error',
@@ -115,13 +149,22 @@ router.get('/dashboard/recent-activity', requireAdminAuth, async (req, res) => {
   
   try {
     const adminId = req.adminId;
-    const userRole = await getUserRole(adminId);
+    const userRole = req.userRole;
     const { limit = 10 } = req.query;
+
+    if (!userRole) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid user role'
+      });
+    }
+
+    const normalizedRole = userRole.toLowerCase().trim();
 
     let activityQuery;
     let queryParams;
 
-    if (['super_admin', 'admin'].includes(userRole)) {
+    if (['super_admin', 'admin'].includes(normalizedRole)) {
       activityQuery = `
         SELECT 
           n.news_id,
@@ -132,12 +175,12 @@ router.get('/dashboard/recent-activity', requireAdminAuth, async (req, res) => {
           n.published_at,
           na.workflow_status,
           CONCAT(a.first_name, ' ', a.last_name) as author_name,
-          a.role as author_role,
+          a.role::text as author_role,
           c.name as category_name
         FROM news n
         LEFT JOIN news_approval na ON n.news_id = na.news_id
         LEFT JOIN admins a ON n.author_id = a.admin_id
-        LEFT JOIN categories c ON n.category_id = c.category_id
+        LEFT JOIN categories c ON n.primary_category_id = c.category_id
         ORDER BY n.updated_at DESC
         LIMIT $1
       `;
@@ -153,12 +196,12 @@ router.get('/dashboard/recent-activity', requireAdminAuth, async (req, res) => {
           n.published_at,
           na.workflow_status,
           CONCAT(a.first_name, ' ', a.last_name) as author_name,
-          a.role as author_role,
+          a.role::text as author_role,
           c.name as category_name
         FROM news n
         LEFT JOIN news_approval na ON n.news_id = na.news_id
         LEFT JOIN admins a ON n.author_id = a.admin_id
-        LEFT JOIN categories c ON n.category_id = c.category_id
+        LEFT JOIN categories c ON n.primary_category_id = c.category_id
         WHERE n.author_id = $1
         ORDER BY n.updated_at DESC
         LIMIT $2
@@ -176,6 +219,7 @@ router.get('/dashboard/recent-activity', requireAdminAuth, async (req, res) => {
 
   } catch (error) {
     console.error('[Admin Dashboard] Activity error:', error);
+    console.error('[Admin Dashboard] Error stack:', error.stack);
     return res.status(500).json({
       success: false,
       message: 'Internal server error',
@@ -184,55 +228,58 @@ router.get('/dashboard/recent-activity', requireAdminAuth, async (req, res) => {
   }
 });
 
+
 router.get('/dashboard/performance', requireAdminAuth, async (req, res) => {
   const pool = getPool();
   
   try {
     const adminId = req.adminId;
-    const userRole = await getUserRole(adminId);
+    const userRole = req.userRole;
     const { range = '7d' } = req.query;
 
-    let days = 7;
-    if (range === '30d') days = 30;
-    else if (range === '90d') days = 90;
+    if (!userRole) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid user role'
+      });
+    }
+
+    const normalizedRole = userRole.toLowerCase().trim();
+
+    const rangeDays = {
+      '7d': 7,
+      '30d': 30,
+      '90d': 90,
+      '1y': 365
+    }[range] || 7;
 
     let performanceQuery;
     let queryParams;
 
-    if (['super_admin', 'admin'].includes(userRole)) {
+    if (['super_admin', 'admin'].includes(normalizedRole)) {
       performanceQuery = `
-        WITH daily_stats AS (
-          SELECT 
-            DATE(n.created_at) as date,
-            COUNT(DISTINCT n.news_id) as posts_created,
-            COUNT(DISTINCT n.news_id) FILTER (WHERE n.status = 'published') as posts_published,
-            COALESCE(SUM(n.views), 0) as daily_views,
-            COALESCE(SUM(n.likes_count), 0) as daily_likes,
-            COALESCE(SUM(n.comments_count), 0) as daily_comments
-          FROM news n
-          WHERE n.created_at >= CURRENT_DATE - INTERVAL '${days} days'
-          GROUP BY DATE(n.created_at)
-          ORDER BY date DESC
-        )
-        SELECT * FROM daily_stats
+        SELECT 
+          DATE(created_at) as date,
+          COUNT(*) as posts_created,
+          SUM(views) as total_views,
+          SUM(likes_count) as total_likes
+        FROM news
+        WHERE created_at >= CURRENT_DATE - INTERVAL '${rangeDays} days'
+        GROUP BY DATE(created_at)
+        ORDER BY date DESC
       `;
       queryParams = [];
     } else {
       performanceQuery = `
-        WITH daily_stats AS (
-          SELECT 
-            DATE(n.created_at) as date,
-            COUNT(DISTINCT n.news_id) as posts_created,
-            COUNT(DISTINCT n.news_id) FILTER (WHERE n.status = 'published') as posts_published,
-            COALESCE(SUM(n.views), 0) as daily_views,
-            COALESCE(SUM(n.likes_count), 0) as daily_likes,
-            COALESCE(SUM(n.comments_count), 0) as daily_comments
-          FROM news n
-          WHERE n.author_id = $1 AND n.created_at >= CURRENT_DATE - INTERVAL '${days} days'
-          GROUP BY DATE(n.created_at)
-          ORDER BY date DESC
-        )
-        SELECT * FROM daily_stats
+        SELECT 
+          DATE(created_at) as date,
+          COUNT(*) as posts_created,
+          SUM(views) as total_views,
+          SUM(likes_count) as total_likes
+        FROM news
+        WHERE author_id = $1 AND created_at >= CURRENT_DATE - INTERVAL '${rangeDays} days'
+        GROUP BY DATE(created_at)
+        ORDER BY date DESC
       `;
       queryParams = [adminId];
     }
@@ -242,12 +289,12 @@ router.get('/dashboard/performance', requireAdminAuth, async (req, res) => {
     return res.status(200).json({
       success: true,
       performance: result.rows,
-      range: range,
       message: 'Performance data fetched successfully'
     });
 
   } catch (error) {
     console.error('[Admin Dashboard] Performance error:', error);
+    console.error('[Admin Dashboard] Error stack:', error.stack);
     return res.status(500).json({
       success: false,
       message: 'Internal server error',
@@ -258,26 +305,61 @@ router.get('/dashboard/performance', requireAdminAuth, async (req, res) => {
 
 router.get('/permissions', requireAdminAuth, async (req, res) => {
   try {
-    const adminId = req.adminId;
-    const userRole = await getUserRole(adminId);
+    const userRole = req.userRole;
+
+    if (!userRole) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid user role'
+      });
+    }
+
+    const normalizedRole = userRole.toLowerCase().trim();
+
+    const getAssignableRoles = (role) => {
+      const ROLE_HIERARCHY = {
+        super_admin: 4,
+        admin: 3,
+        editor: 2,
+        moderator: 1
+      };
+
+      const userLevel = ROLE_HIERARCHY[role] || 0;
+      
+      return Object.entries(ROLE_HIERARCHY)
+        .filter(([_, level]) => level < userLevel)
+        .map(([roleName]) => roleName)
+        .sort((a, b) => ROLE_HIERARCHY[a] - ROLE_HIERARCHY[b]);
+    };
 
     const permissions = {
-      role: userRole,
-      can_publish_directly: ['super_admin', 'admin', 'editor'].includes(userRole),
-      can_approve: ['super_admin', 'admin', 'editor'].includes(userRole),
-      can_manage_users: ['super_admin', 'admin'].includes(userRole),
-      can_hard_delete: ['super_admin', 'admin'].includes(userRole),
-      can_archive: ['super_admin', 'admin', 'editor', 'moderator'].includes(userRole),
-      can_set_featured: ['super_admin', 'admin', 'editor'].includes(userRole),
-      can_set_breaking: ['super_admin', 'admin'].includes(userRole),
-      can_set_pinned: ['super_admin', 'admin'].includes(userRole),
-      can_edit_any: ['super_admin', 'admin', 'editor'].includes(userRole),
+      role: normalizedRole,
+      can_publish_directly: ['super_admin', 'admin', 'editor'].includes(normalizedRole),
+      can_approve_posts: ['super_admin', 'admin', 'editor'].includes(normalizedRole),
+      can_hard_delete: ['super_admin', 'admin'].includes(normalizedRole),
+      can_archive: true,
+      can_edit_any: ['super_admin', 'admin', 'editor'].includes(normalizedRole),
+      can_manage_users: ['super_admin', 'admin'].includes(normalizedRole),
+      can_create_posts: true,
+      can_create_quotes: true,
+      can_feature: ['super_admin', 'admin', 'editor'].includes(normalizedRole),
+      can_set_breaking: ['super_admin', 'admin'].includes(normalizedRole),
+      can_set_pinned: ['super_admin', 'admin'].includes(normalizedRole),
+      can_view_users: true,
+      can_create_users: ['super_admin', 'admin'].includes(normalizedRole),
+      can_edit_users: ['super_admin', 'admin'].includes(normalizedRole),
+      can_delete_users: ['super_admin', 'admin'].includes(normalizedRole),
+      can_change_own_password: true,
+      can_reset_others_password: ['super_admin', 'admin'].includes(normalizedRole),
+      can_manage_roles: ['super_admin', 'admin'].includes(normalizedRole),
+      requires_approval: !['super_admin', 'admin', 'editor'].includes(normalizedRole),
       can_view_analytics: true,
-      can_view_system_settings: ['super_admin'].includes(userRole),
-      can_view_all_users: ['super_admin', 'admin'].includes(userRole),
-      can_create_super_admin: userRole === 'super_admin',
-      can_promote_users: userRole === 'super_admin',
-      can_access_chat: true
+      can_view_system_settings: ['super_admin'].includes(normalizedRole),
+      can_view_all_users: ['super_admin', 'admin'].includes(normalizedRole),
+      can_create_super_admin: normalizedRole === 'super_admin',
+      can_promote_users: normalizedRole === 'super_admin',
+      can_access_chat: true,
+      assignable_roles: getAssignableRoles(normalizedRole)
     };
 
     return res.status(200).json({
@@ -309,8 +391,8 @@ router.get('/profile', requireAdminAuth, async (req, res) => {
         last_name,
         email,
         phone,
-        role,
-        status,
+        role::text as role,
+        status::text as status,
         created_at,
         last_login,
         (SELECT COUNT(*) FROM news WHERE author_id = $1) as total_posts,
@@ -392,7 +474,7 @@ router.put('/profile', requireAdminAuth, async (req, res) => {
         phone = $4,
         updated_at = CURRENT_TIMESTAMP
       WHERE admin_id = $5
-      RETURNING admin_id, first_name, last_name, email, phone, role, updated_at
+      RETURNING admin_id, first_name, last_name, email, phone, role::text as role, updated_at
     `, [
       first_name.trim(),
       last_name.trim(),
@@ -431,10 +513,18 @@ router.put('/profile', requireAdminAuth, async (req, res) => {
 
 router.get('/system/health', requireAdminAuth, async (req, res) => {
   try {
-    const adminId = req.adminId;
-    const userRole = await getUserRole(adminId);
+    const userRole = req.userRole;
 
-    if (userRole !== 'super_admin') {
+    if (!userRole) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required'
+      });
+    }
+
+    const normalizedRole = userRole.toLowerCase().trim();
+
+    if (normalizedRole !== 'super_admin') {
       return res.status(403).json({
         success: false,
         message: 'Only Super Admins can access system health information'
