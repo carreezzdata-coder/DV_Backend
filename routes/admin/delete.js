@@ -45,7 +45,6 @@ const deleteCloudflareImages = async (newsId, client) => {
     for (const imageUrl of imageUrls) {
       try {
         await cloudflareService.deleteImage(imageUrl);
-        console.log(`Deleted Cloudflare image: ${imageUrl}`);
       } catch (error) {
         console.error(`Failed to delete Cloudflare image ${imageUrl}:`, error);
       }
@@ -96,7 +95,6 @@ router.delete('/:id', requireDeleter, async (req, res) => {
     await client.query('DELETE FROM news_images WHERE news_id = $1', [id]);
     await client.query('DELETE FROM news_social_media WHERE news_id = $1', [id]);
     await client.query('DELETE FROM news_comments WHERE news_id = $1', [id]);
-    await client.query('DELETE FROM likes WHERE news_id = $1', [id]);
     await client.query('DELETE FROM post_promotions WHERE news_id = $1', [id]);
     await client.query('DELETE FROM featured_news WHERE news_id = $1', [id]);
     
@@ -190,7 +188,6 @@ router.post('/bulk', requireDeleter, async (req, res) => {
         await client.query('DELETE FROM news_images WHERE news_id = $1', [newsId]);
         await client.query('DELETE FROM news_social_media WHERE news_id = $1', [newsId]);
         await client.query('DELETE FROM news_comments WHERE news_id = $1', [newsId]);
-        await client.query('DELETE FROM likes WHERE news_id = $1', [newsId]);
         await client.query('DELETE FROM post_promotions WHERE news_id = $1', [newsId]);
         await client.query('DELETE FROM featured_news WHERE news_id = $1', [newsId]);
         await client.query('DELETE FROM news WHERE news_id = $1', [newsId]);
