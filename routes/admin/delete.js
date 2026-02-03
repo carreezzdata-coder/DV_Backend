@@ -4,7 +4,6 @@ const { getPool } = require('../../config/db');
 const { FRONTEND_URL, CLIENT_URL, ADMIN_URL, API_DOMAIN, ALLOWED_ORIGINS } = require('../../config/frontendconfig');
 const requireAdminAuth = require('../../middleware/adminAuth');
 const { requireDeleter } = require('../../middleware/rolePermissions');
-const cloudflareService = require('../../services/cloudflareService');
 
 const logAdminActivity = async (client, adminId, action, targetType, targetId, details, ip) => {
   try {
@@ -59,6 +58,7 @@ router.delete('/:id', requireDeleter, async (req, res) => {
       await client.query('DELETE FROM likes WHERE news_id = $1', [id]);
       await client.query('DELETE FROM post_promotions WHERE news_id = $1', [id]);
       await client.query('DELETE FROM featured_news WHERE news_id = $1', [id]);
+      
       await client.query('DELETE FROM news WHERE news_id = $1', [id]);
 
       const ip = req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.ip || 'unknown';
@@ -117,6 +117,7 @@ router.delete('/:id', requireDeleter, async (req, res) => {
 
   } catch (error) {
     console.error('[Delete] Error:', error.message);
+    console.error('[Delete] Stack:', error.stack);
     
     try {
       await client.query('ROLLBACK');
