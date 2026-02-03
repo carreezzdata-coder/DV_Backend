@@ -4,6 +4,7 @@ const { getPool } = require('../../config/db');
 const { FRONTEND_URL, CLIENT_URL, ADMIN_URL, API_DOMAIN, ALLOWED_ORIGINS } = require('../../config/frontendconfig');
 const requireAdminAuth = require('../../middleware/adminAuth');
 const { requireDeleter } = require('../../middleware/rolePermissions');
+const cloudflareService = require('../../services/cloudflareService');
 
 const logAdminActivity = async (client, adminId, action, targetType, targetId, details, ip) => {
   try {
@@ -29,16 +30,7 @@ router.delete('/:id', requireDeleter, async (req, res) => {
     const adminId = req.adminId;
     const userRole = req.userRole;
 
-    console.log('═══════════════════════════════════════');
-    console.log('🔥 DELETE REQUEST');
-    console.log('News ID:', id);
-    console.log('Admin ID:', adminId);
-    console.log('User Role:', userRole);
-    console.log('Hard Delete:', hard_delete);
-    console.log('═══════════════════════════════════════');
-
     if (!id || !/^\d+$/.test(id)) {
-      console.error('❌ Invalid news ID:', id);
       await client.query('ROLLBACK');
       return res.status(400).json({
         success: false,
@@ -58,26 +50,15 @@ router.delete('/:id', requireDeleter, async (req, res) => {
     }
 
     const article = checkResult.rows[0];
-    const isOwnArticle = article.author_id === adminId;
-
-    console.log('📄 Article:', {
-      id: article.news_id,
-      title: article.title,
-      author: article.author_id,
-      isOwn: isOwnArticle,
-      status: article.status
-    });
 
     if (hard_delete) {
-      console.log('🗑️ Performing HARD DELETE...');
-
       await client.query('DELETE FROM news_categories WHERE news_id = $1', [id]);
       await client.query('DELETE FROM news_images WHERE news_id = $1', [id]);
       await client.query('DELETE FROM news_social_media WHERE news_id = $1', [id]);
       await client.query('DELETE FROM news_comments WHERE news_id = $1', [id]);
       await client.query('DELETE FROM likes WHERE news_id = $1', [id]);
       await client.query('DELETE FROM post_promotions WHERE news_id = $1', [id]);
-      
+      await client.query('DELETE FROM featured_news WHERE news_id = $1', [id]);
       await client.query('DELETE FROM news WHERE news_id = $1', [id]);
 
       const ip = req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.ip || 'unknown';
@@ -94,8 +75,6 @@ router.delete('/:id', requireDeleter, async (req, res) => {
 
       await client.query('COMMIT');
 
-      console.log('✅ Article permanently deleted');
-
       return res.status(200).json({
         success: true,
         message: 'Article permanently deleted',
@@ -103,13 +82,10 @@ router.delete('/:id', requireDeleter, async (req, res) => {
       });
 
     } else {
-      console.log('📦 Performing ARCHIVE (soft delete)...');
-
       const updateQuery = `
         UPDATE news 
         SET 
           status = 'archived',
-          workflow_status = 'archived',
           updated_at = CURRENT_TIMESTAMP
         WHERE news_id = $1
         RETURNING news_id, title
@@ -131,8 +107,6 @@ router.delete('/:id', requireDeleter, async (req, res) => {
 
       await client.query('COMMIT');
 
-      console.log('✅ Article archived successfully');
-
       return res.status(200).json({
         success: true,
         message: 'Article archived successfully',
@@ -142,13 +116,12 @@ router.delete('/:id', requireDeleter, async (req, res) => {
     }
 
   } catch (error) {
-    console.error('❌ [Delete] Error:', error.message);
-    console.error('❌ [Delete] Stack:', error.stack);
+    console.error('[Delete] Error:', error.message);
     
     try {
       await client.query('ROLLBACK');
     } catch (rollbackError) {
-      console.error('❌ [Delete] Rollback failed:', rollbackError);
+      console.error('[Delete] Rollback failed:', rollbackError);
     }
     
     return res.status(500).json({
@@ -171,15 +144,6 @@ router.post('/bulk', requireDeleter, async (req, res) => {
     
     const { news_ids, hard_delete = false } = req.body;
     const adminId = req.adminId;
-    const userRole = req.userRole;
-
-    console.log('═══════════════════════════════════════');
-    console.log('🔥 BULK DELETE REQUEST');
-    console.log('News IDs:', news_ids);
-    console.log('Admin ID:', adminId);
-    console.log('User Role:', userRole);
-    console.log('Hard Delete:', hard_delete);
-    console.log('═══════════════════════════════════════');
 
     if (!news_ids || !Array.isArray(news_ids) || news_ids.length === 0) {
       await client.query('ROLLBACK');
@@ -215,10 +179,11 @@ router.post('/bulk', requireDeleter, async (req, res) => {
           await client.query('DELETE FROM news_comments WHERE news_id = $1', [newsId]);
           await client.query('DELETE FROM likes WHERE news_id = $1', [newsId]);
           await client.query('DELETE FROM post_promotions WHERE news_id = $1', [newsId]);
+          await client.query('DELETE FROM featured_news WHERE news_id = $1', [newsId]);
           await client.query('DELETE FROM news WHERE news_id = $1', [newsId]);
         } else {
           await client.query(
-            `UPDATE news SET status = 'archived', workflow_status = 'archived', updated_at = CURRENT_TIMESTAMP WHERE news_id = $1`,
+            `UPDATE news SET status = 'archived', updated_at = CURRENT_TIMESTAMP WHERE news_id = $1`,
             [newsId]
           );
         }
@@ -226,7 +191,7 @@ router.post('/bulk', requireDeleter, async (req, res) => {
         results.success.push({ id: newsId, title: article.title });
 
       } catch (itemError) {
-        console.error(`❌ Error processing news ${newsId}:`, itemError);
+        console.error(`Error processing news ${newsId}:`, itemError);
         results.failed.push({ id: newsId, reason: itemError.message });
       }
     }
@@ -245,10 +210,6 @@ router.post('/bulk', requireDeleter, async (req, res) => {
 
     await client.query('COMMIT');
 
-    console.log('✅ Bulk operation completed');
-    console.log('Success:', results.success.length);
-    console.log('Failed:', results.failed.length);
-
     return res.status(200).json({
       success: true,
       message: `Bulk operation completed: ${results.success.length} succeeded, ${results.failed.length} failed`,
@@ -257,7 +218,7 @@ router.post('/bulk', requireDeleter, async (req, res) => {
 
   } catch (error) {
     await client.query('ROLLBACK');
-    console.error('❌ [Bulk Delete] Error:', error);
+    console.error('[Bulk Delete] Error:', error);
     return res.status(500).json({
       success: false,
       message: 'Internal server error',
