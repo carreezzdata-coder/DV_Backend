@@ -4,6 +4,7 @@ const { getPool } = require('../../config/db');
 const { FRONTEND_URL, CLIENT_URL, ADMIN_URL, API_DOMAIN, ALLOWED_ORIGINS } = require('../../config/frontendconfig');
 const requireAdminAuth = require('../../middleware/adminAuth');
 const { requireDeleter } = require('../../middleware/rolePermissions');
+const cloudflareService = require('../../services/cloudflareService');
 
 const logAdminActivity = async (client, adminId, action, targetType, targetId, details, ip) => {
   try {
@@ -17,6 +18,46 @@ const logAdminActivity = async (client, adminId, action, targetType, targetId, d
   }
 };
 
+const deleteCloudflareImages = async (newsId, client) => {
+  try {
+    const imagesResult = await client.query(
+      'SELECT image_url FROM news_images WHERE news_id = $1',
+      [newsId]
+    );
+
+    const mainImageResult = await client.query(
+      'SELECT image_url FROM news WHERE news_id = $1',
+      [newsId]
+    );
+
+    const imageUrls = [];
+    
+    if (mainImageResult.rows.length > 0 && mainImageResult.rows[0].image_url) {
+      imageUrls.push(mainImageResult.rows[0].image_url);
+    }
+
+    imagesResult.rows.forEach(row => {
+      if (row.image_url) {
+        imageUrls.push(row.image_url);
+      }
+    });
+
+    for (const imageUrl of imageUrls) {
+      try {
+        await cloudflareService.deleteImage(imageUrl);
+        console.log(`Deleted Cloudflare image: ${imageUrl}`);
+      } catch (error) {
+        console.error(`Failed to delete Cloudflare image ${imageUrl}:`, error);
+      }
+    }
+
+    return imageUrls.length;
+  } catch (error) {
+    console.error('[deleteCloudflareImages] Error:', error);
+    return 0;
+  }
+};
+
 router.delete('/:id', requireDeleter, async (req, res) => {
   const pool = getPool();
   const client = await pool.connect();
@@ -25,7 +66,6 @@ router.delete('/:id', requireDeleter, async (req, res) => {
     await client.query('BEGIN');
     
     const { id } = req.params;
-    const { hard_delete = false } = req.body;
     const adminId = req.adminId;
     const userRole = req.userRole;
 
@@ -50,70 +90,38 @@ router.delete('/:id', requireDeleter, async (req, res) => {
 
     const article = checkResult.rows[0];
 
-    if (hard_delete) {
-      await client.query('DELETE FROM news_categories WHERE news_id = $1', [id]);
-      await client.query('DELETE FROM news_images WHERE news_id = $1', [id]);
-      await client.query('DELETE FROM news_social_media WHERE news_id = $1', [id]);
-      await client.query('DELETE FROM news_comments WHERE news_id = $1', [id]);
-      await client.query('DELETE FROM likes WHERE news_id = $1', [id]);
-      await client.query('DELETE FROM post_promotions WHERE news_id = $1', [id]);
-      await client.query('DELETE FROM featured_news WHERE news_id = $1', [id]);
-      
-      await client.query('DELETE FROM news WHERE news_id = $1', [id]);
+    const deletedImagesCount = await deleteCloudflareImages(id, client);
 
-      const ip = req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.ip || 'unknown';
-      
-      await logAdminActivity(
-        client,
-        adminId,
-        'hard_delete_news',
-        'news',
-        id,
-        `Permanently deleted article: ${article.title}`,
-        ip
-      );
+    await client.query('DELETE FROM news_categories WHERE news_id = $1', [id]);
+    await client.query('DELETE FROM news_images WHERE news_id = $1', [id]);
+    await client.query('DELETE FROM news_social_media WHERE news_id = $1', [id]);
+    await client.query('DELETE FROM news_comments WHERE news_id = $1', [id]);
+    await client.query('DELETE FROM likes WHERE news_id = $1', [id]);
+    await client.query('DELETE FROM post_promotions WHERE news_id = $1', [id]);
+    await client.query('DELETE FROM featured_news WHERE news_id = $1', [id]);
+    
+    await client.query('DELETE FROM news WHERE news_id = $1', [id]);
 
-      await client.query('COMMIT');
+    const ip = req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.ip || 'unknown';
+    
+    await logAdminActivity(
+      client,
+      adminId,
+      'delete_news',
+      'news',
+      id,
+      `Permanently deleted article: ${article.title} (${deletedImagesCount} images removed from Cloudflare)`,
+      ip
+    );
 
-      return res.status(200).json({
-        success: true,
-        message: 'Article permanently deleted',
-        action: 'hard_delete'
-      });
+    await client.query('COMMIT');
 
-    } else {
-      const updateQuery = `
-        UPDATE news 
-        SET 
-          status = 'archived',
-          updated_at = CURRENT_TIMESTAMP
-        WHERE news_id = $1
-        RETURNING news_id, title
-      `;
-
-      const updateResult = await client.query(updateQuery, [id]);
-
-      const ip = req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.ip || 'unknown';
-      
-      await logAdminActivity(
-        client,
-        adminId,
-        'archive_news',
-        'news',
-        id,
-        `Archived article: ${article.title}`,
-        ip
-      );
-
-      await client.query('COMMIT');
-
-      return res.status(200).json({
-        success: true,
-        message: 'Article archived successfully',
-        action: 'archive',
-        article: updateResult.rows[0]
-      });
-    }
+    return res.status(200).json({
+      success: true,
+      message: 'Article permanently deleted',
+      action: 'delete',
+      deleted_images: deletedImagesCount
+    });
 
   } catch (error) {
     console.error('[Delete] Error:', error.message);
@@ -143,7 +151,7 @@ router.post('/bulk', requireDeleter, async (req, res) => {
   try {
     await client.query('BEGIN');
     
-    const { news_ids, hard_delete = false } = req.body;
+    const { news_ids } = req.body;
     const adminId = req.adminId;
 
     if (!news_ids || !Array.isArray(news_ids) || news_ids.length === 0) {
@@ -159,6 +167,8 @@ router.post('/bulk', requireDeleter, async (req, res) => {
       failed: []
     };
 
+    let totalDeletedImages = 0;
+
     for (const newsId of news_ids) {
       try {
         const checkResult = await client.query(
@@ -173,23 +183,23 @@ router.post('/bulk', requireDeleter, async (req, res) => {
 
         const article = checkResult.rows[0];
 
-        if (hard_delete) {
-          await client.query('DELETE FROM news_categories WHERE news_id = $1', [newsId]);
-          await client.query('DELETE FROM news_images WHERE news_id = $1', [newsId]);
-          await client.query('DELETE FROM news_social_media WHERE news_id = $1', [newsId]);
-          await client.query('DELETE FROM news_comments WHERE news_id = $1', [newsId]);
-          await client.query('DELETE FROM likes WHERE news_id = $1', [newsId]);
-          await client.query('DELETE FROM post_promotions WHERE news_id = $1', [newsId]);
-          await client.query('DELETE FROM featured_news WHERE news_id = $1', [newsId]);
-          await client.query('DELETE FROM news WHERE news_id = $1', [newsId]);
-        } else {
-          await client.query(
-            `UPDATE news SET status = 'archived', updated_at = CURRENT_TIMESTAMP WHERE news_id = $1`,
-            [newsId]
-          );
-        }
+        const deletedImagesCount = await deleteCloudflareImages(newsId, client);
+        totalDeletedImages += deletedImagesCount;
 
-        results.success.push({ id: newsId, title: article.title });
+        await client.query('DELETE FROM news_categories WHERE news_id = $1', [newsId]);
+        await client.query('DELETE FROM news_images WHERE news_id = $1', [newsId]);
+        await client.query('DELETE FROM news_social_media WHERE news_id = $1', [newsId]);
+        await client.query('DELETE FROM news_comments WHERE news_id = $1', [newsId]);
+        await client.query('DELETE FROM likes WHERE news_id = $1', [newsId]);
+        await client.query('DELETE FROM post_promotions WHERE news_id = $1', [newsId]);
+        await client.query('DELETE FROM featured_news WHERE news_id = $1', [newsId]);
+        await client.query('DELETE FROM news WHERE news_id = $1', [newsId]);
+
+        results.success.push({ 
+          id: newsId, 
+          title: article.title,
+          deleted_images: deletedImagesCount 
+        });
 
       } catch (itemError) {
         console.error(`Error processing news ${newsId}:`, itemError);
@@ -202,10 +212,10 @@ router.post('/bulk', requireDeleter, async (req, res) => {
     await logAdminActivity(
       client,
       adminId,
-      hard_delete ? 'bulk_hard_delete' : 'bulk_archive',
+      'bulk_delete',
       'news',
       null,
-      `Bulk ${hard_delete ? 'deleted' : 'archived'} ${results.success.length} articles`,
+      `Bulk deleted ${results.success.length} articles (${totalDeletedImages} images removed from Cloudflare)`,
       ip
     );
 
@@ -214,7 +224,8 @@ router.post('/bulk', requireDeleter, async (req, res) => {
     return res.status(200).json({
       success: true,
       message: `Bulk operation completed: ${results.success.length} succeeded, ${results.failed.length} failed`,
-      results
+      results,
+      total_deleted_images: totalDeletedImages
     });
 
   } catch (error) {
