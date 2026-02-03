@@ -14,8 +14,13 @@ const requireAdminAuth = async (req, res, next) => {
     }
 
     const pool = getPool();
+    
+    // ✅ FIX: Cast ENUM types to text to ensure proper string handling
     const adminResult = await pool.query(
-      `SELECT admin_id, first_name, last_name, email, phone, role, permissions, status
+      `SELECT admin_id, first_name, last_name, email, phone, 
+              role::text as role, 
+              permissions, 
+              status::text as status
        FROM admins
        WHERE admin_id = $1 AND status = 'active'
        LIMIT 1`,
@@ -36,9 +41,22 @@ const requireAdminAuth = async (req, res, next) => {
 
     const admin = adminResult.rows[0];
     
+    // ✅ FIX: Normalize role to lowercase string - THIS IS CRITICAL
+    // PostgreSQL ENUMs can return as objects, not plain strings
+    // This ensures req.userRole is always a normalized string
+    const normalizedRole = admin.role 
+      ? admin.role.toLowerCase().trim() 
+      : 'moderator';
+    
     req.admin = admin;
     req.adminId = admin.admin_id;
-    req.userRole = admin.role;
+    req.userRole = normalizedRole;  // ⭐ Now guaranteed to be a string
+
+    console.log('[adminAuth] Authenticated:', {
+      adminId: admin.admin_id,
+      email: admin.email,
+      role: normalizedRole  // Log the normalized role for debugging
+    });
 
     next();
 
