@@ -89,15 +89,41 @@ router.delete('/:id', requireDeleter, async (req, res) => {
 
     const article = checkResult.rows[0];
 
+    // Delete Cloudflare images
     const deletedImagesCount = await deleteCloudflareImages(id, client);
 
+    // Delete from ALL related tables in correct order (child tables first)
+    
+    // 1. Delete promotional/featured content tables
+    await client.query('DELETE FROM breaking_news WHERE news_id = $1', [id]);
+    await client.query('DELETE FROM featured_news WHERE news_id = $1', [id]);
+    await client.query('DELETE FROM pinned_news WHERE news_id = $1', [id]);
+    
+    // 2. Delete categories association
     await client.query('DELETE FROM news_categories WHERE news_id = $1', [id]);
+    
+    // 3. Delete media content
     await client.query('DELETE FROM news_images WHERE news_id = $1', [id]);
     await client.query('DELETE FROM news_social_media WHERE news_id = $1', [id]);
-    await client.query('DELETE FROM news_comments WHERE news_id = $1', [id]);
-    await client.query('DELETE FROM post_promotions WHERE news_id = $1', [id]);
-    await client.query('DELETE FROM featured_news WHERE news_id = $1', [id]);
+    await client.query('DELETE FROM news_videos WHERE news_id = $1', [id]);
     
+    // 4. Delete content blocks
+    await client.query('DELETE FROM news_content_blocks WHERE news_id = $1', [id]);
+    
+    // 5. Delete user interactions
+    await client.query('DELETE FROM news_comments WHERE news_id = $1', [id]);
+    await client.query('DELETE FROM news_reactions WHERE news_id = $1', [id]);
+    await client.query('DELETE FROM news_shares WHERE news_id = $1', [id]);
+    await client.query('DELETE FROM user_saved_articles WHERE news_id = $1', [id]);
+    
+    // 6. Delete analytics/tracking
+    await client.query('DELETE FROM page_views WHERE news_id = $1', [id]);
+    
+    // 7. Delete approval records
+    await client.query('DELETE FROM news_approval_history WHERE news_id = $1', [id]);
+    await client.query('DELETE FROM news_approval WHERE news_id = $1', [id]);
+    
+    // 8. Finally, delete the main news record
     await client.query('DELETE FROM news WHERE news_id = $1', [id]);
 
     const ip = req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.ip || 'unknown';
@@ -181,15 +207,42 @@ router.post('/bulk', requireDeleter, async (req, res) => {
 
         const article = checkResult.rows[0];
 
+        // Delete Cloudflare images
         const deletedImagesCount = await deleteCloudflareImages(newsId, client);
         totalDeletedImages += deletedImagesCount;
 
+        // Delete from ALL related tables in correct order (child tables first)
+        
+        // 1. Delete promotional/featured content tables
+        await client.query('DELETE FROM breaking_news WHERE news_id = $1', [newsId]);
+        await client.query('DELETE FROM featured_news WHERE news_id = $1', [newsId]);
+        await client.query('DELETE FROM pinned_news WHERE news_id = $1', [newsId]);
+        
+        // 2. Delete categories association
         await client.query('DELETE FROM news_categories WHERE news_id = $1', [newsId]);
+        
+        // 3. Delete media content
         await client.query('DELETE FROM news_images WHERE news_id = $1', [newsId]);
         await client.query('DELETE FROM news_social_media WHERE news_id = $1', [newsId]);
+        await client.query('DELETE FROM news_videos WHERE news_id = $1', [newsId]);
+        
+        // 4. Delete content blocks
+        await client.query('DELETE FROM news_content_blocks WHERE news_id = $1', [newsId]);
+        
+        // 5. Delete user interactions
         await client.query('DELETE FROM news_comments WHERE news_id = $1', [newsId]);
-        await client.query('DELETE FROM post_promotions WHERE news_id = $1', [newsId]);
-        await client.query('DELETE FROM featured_news WHERE news_id = $1', [newsId]);
+        await client.query('DELETE FROM news_reactions WHERE news_id = $1', [newsId]);
+        await client.query('DELETE FROM news_shares WHERE news_id = $1', [newsId]);
+        await client.query('DELETE FROM user_saved_articles WHERE news_id = $1', [newsId]);
+        
+        // 6. Delete analytics/tracking
+        await client.query('DELETE FROM page_views WHERE news_id = $1', [newsId]);
+        
+        // 7. Delete approval records
+        await client.query('DELETE FROM news_approval_history WHERE news_id = $1', [newsId]);
+        await client.query('DELETE FROM news_approval WHERE news_id = $1', [newsId]);
+        
+        // 8. Finally, delete the main news record
         await client.query('DELETE FROM news WHERE news_id = $1', [newsId]);
 
         results.success.push({ 
