@@ -1,3 +1,5 @@
+//routes/api/articles.js
+
 const express = require('express');
 const router = express.Router();
 const { getPool } = require('../../config/db');
@@ -13,7 +15,6 @@ const getImageUrl = (imageUrl) => {
   if (cloudflareService.isEnabled()) {
     return cloudflareService.getPublicUrl(cleanPath);
   }
-  if (process.env.NODE_ENV === 'development') return `http://localhost:5000/${cleanPath}`;
   const r2Url = process.env.R2_PUBLIC_URL;
   if (r2Url) {
     const cleanUrl = r2Url.endsWith('/') ? r2Url.slice(0, -1) : r2Url;
@@ -33,7 +34,6 @@ const classifyMediaKind = (platform, postType) => {
 };
 
 router.get('/:slug', async (req, res) => {
-  try {
   try {
   res.set({
     'Cache-Control': 'public, max-age=300, s-maxage=900, stale-while-revalidate=3600',
@@ -138,7 +138,7 @@ router.get('/:slug', async (req, res) => {
     ]);
 
     const processedImages = imagesResult.rows.map((img, idx) => ({
-      image_url: img.image_url,
+      image_url: getImageUrl(img.image_url),
       image_caption: img.image_caption,
       alt_text: img.alt_text,
       is_featured: img.is_featured,
@@ -178,7 +178,7 @@ router.get('/:slug', async (req, res) => {
       title: rel.title,
       slug: rel.slug,
       excerpt: rel.excerpt,
-      image_url: rel.image_url,
+      image_url: getImageUrl(rel.image_url),
       published_at: rel.published_at,
       reading_time: rel.reading_time,
       views: rel.views,
@@ -209,7 +209,7 @@ router.get('/:slug', async (req, res) => {
         content: article.content,
         excerpt: article.excerpt,
         slug: article.slug,
-        image_url: article.image_url,
+        image_url: getImageUrl(article.image_url),
         status: article.status,
         reading_time: article.reading_time,
         views: (article.views || 0) + 1,
@@ -259,10 +259,6 @@ router.get('/:slug', async (req, res) => {
       message: 'Internal server error',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
-  }
-  } catch (error) {
-    console.error("[API] Unhandled error:", error);
-    return res.status(500).json({ success: false, message: "Internal server error" });
   }
   } catch (error) {
     console.error("[API] Unhandled error:", error);
