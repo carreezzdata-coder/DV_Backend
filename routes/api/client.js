@@ -1,215 +1,802 @@
-//routes/admin/client.js
 const express = require('express');
 const router = express.Router();
 const { getPool } = require('../../config/db');
-const { FRONTEND_URL, CLIENT_URL, ADMIN_URL, API_DOMAIN, ALLOWED_ORIGINS } = require('../../config/frontendconfig');
-const requireAdminAuth = require('../../middleware/adminAuth');
-const { requireDeleter } = require('../../middleware/rolePermissions');
 const cloudflareService = require('../../services/cloudflareService');
+const { FRONTEND_URL, CLIENT_URL, ADMIN_URL, API_DOMAIN, ALLOWED_ORIGINS } = require('../../config/frontendconfig');
 
-const logAdminActivity = async (client, adminId, action, targetType, targetId, details, ip) => {
-  try {
-    await client.query(
-      `INSERT INTO admin_activity_log (admin_id, action, target_type, target_id, details, ip_address) 
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [adminId, action, targetType, targetId, details, ip]
-    );
-  } catch (error) {
-    console.error('[logAdminActivity] Error:', error);
+const getImageUrl = (imageUrl) => {
+  if (!imageUrl) return null;
+  if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) return imageUrl;
+  const cleanPath = imageUrl.startsWith('/') ? imageUrl.substring(1) : imageUrl;
+  if (cloudflareService.isEnabled()) {
+    return cloudflareService.getPublicUrl(cleanPath);
   }
+  const r2Url = process.env.R2_PUBLIC_URL;
+  if (r2Url) {
+    const cleanUrl = r2Url.endsWith('/') ? r2Url.slice(0, -1) : r2Url;
+    return `${cleanUrl}/${cleanPath}`;
+  }
+  return imageUrl;
 };
 
-router.delete('/:id', requireDeleter, async (req, res) => {
-  const pool = getPool();
-  const client = await pool.connect();
-  
+const normalizeArticle = (article) => ({
+  newsId: article.news_id,
+  news_id: article.news_id,
+  title: article.title,
+  excerpt: article.excerpt || article.meta_description || '',
+  slug: article.slug,
+  imageUrl: getImageUrl(article.image_url),
+  image_url: getImageUrl(article.image_url),
+  publishedAt: article.published_at,
+  published_at: article.published_at,
+  readingTime: article.reading_time || 3,
+  reading_time: article.reading_time || 3,
+  views: article.views || 0,
+  likesCount: article.likes_count || 0,
+  likes_count: article.likes_count || 0,
+  commentsCount: article.comments_count || 0,
+  comments_count: article.comments_count || 0,
+  shareCount: article.share_count || 0,
+  share_count: article.share_count || 0,
+  firstName: article.first_name || 'Daily Vaibe',
+  first_name: article.first_name || 'Daily Vaibe',
+  lastName: article.last_name || 'Editor',
+  last_name: article.last_name || 'Editor',
+  categoryName: article.category_name || 'Uncategorized',
+  category_name: article.category_name || 'Uncategorized',
+  categorySlug: article.category_slug || 'general',
+  category_slug: article.category_slug || 'general',
+  categoryColor: article.category_color || '#6366f1',
+  category_color: article.category_color || '#6366f1',
+  categoryIcon: article.category_icon || '📰',
+  category_icon: article.category_icon || '📰',
+  metaDescription: article.meta_description,
+  meta_description: article.meta_description
+});
+
+router.get('/home', async (req, res) => {
+  res.set({
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0'
+  });
+
   try {
-    await client.query('BEGIN');
-    
-    const { id } = req.params;
-    const adminId = req.adminId;
+    const pool = getPool();
 
-    if (!id || !/^\d+$/.test(id)) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({
-        success: false,
-        message: 'Valid news ID is required'
+    const parentCategoriesResult = await pool.query(`
+      SELECT c.category_id, c.name, c.slug, c.description, c.color, c.icon, COALESCE(c.order_index, 999) as order_index
+      FROM categories c
+      WHERE c.parent_id IS NULL AND c.active = true
+      ORDER BY COALESCE(c.order_index, 999) ASC, c.name ASC
+      LIMIT 20
+    `);
+
+    const parentCategories = parentCategoriesResult.rows;
+    const categoryIds = parentCategories.map(c => c.category_id);
+    
+    if (categoryIds.length === 0) {
+      return res.json({
+        success: true,
+        sliderSlides: [],
+        headlines: [],
+        categorySections: []
       });
     }
 
-    const checkQuery = 'SELECT news_id, title, author_id, status FROM news WHERE news_id = $1';
-    const checkResult = await client.query(checkQuery, [id]);
+    const [recentResult, articlesResult] = await Promise.all([
+      pool.query(`
+        SELECT n.news_id, n.title, n.excerpt, n.slug, n.image_url, n.published_at, n.reading_time, n.views, n.likes_count, n.comments_count, n.share_count, n.meta_description,
+          COALESCE(a.first_name, 'Daily Vaibe') as first_name,
+          COALESCE(a.last_name, 'Editor') as last_name,
+          parent_cat.name as category_name,
+          parent_cat.slug as category_slug,
+          parent_cat.color as category_color,
+          parent_cat.icon as category_icon
+        FROM news n
+        LEFT JOIN admins a ON n.author_id = a.admin_id
+        LEFT JOIN categories c ON n.category_id = c.category_id
+        LEFT JOIN categories parent_cat ON COALESCE(c.parent_id, c.category_id) = parent_cat.category_id
+        WHERE n.status = 'published'
+        ORDER BY n.published_at DESC
+        LIMIT 24
+      `),
+      pool.query(`
+        SELECT n.news_id, n.title, n.excerpt, n.slug, n.image_url, n.published_at, n.reading_time, n.views, n.likes_count, n.comments_count, n.share_count, n.meta_description,
+          COALESCE(a.first_name, 'Daily Vaibe') as first_name,
+          COALESCE(a.last_name, 'Editor') as last_name,
+          parent_cat.category_id,
+          parent_cat.name as category_name,
+          parent_cat.slug as category_slug,
+          parent_cat.color as category_color,
+          parent_cat.icon as category_icon
+        FROM news n
+        LEFT JOIN admins a ON n.author_id = a.admin_id
+        LEFT JOIN categories c ON n.category_id = c.category_id
+        LEFT JOIN categories parent_cat ON COALESCE(c.parent_id, c.category_id) = parent_cat.category_id
+        WHERE n.status = 'published' AND parent_cat.category_id = ANY($1::int[])
+        ORDER BY parent_cat.category_id, n.published_at DESC
+      `, [categoryIds])
+    ]);
 
-    if (checkResult.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({
-        success: false,
-        message: 'News article not found'
-      });
-    }
+    const recent = recentResult.rows.map(normalizeArticle);
 
-    const article = checkResult.rows[0];
-
-    await client.query('DELETE FROM breaking_news WHERE news_id = $1', [id]);
-    await client.query('DELETE FROM featured_news WHERE news_id = $1', [id]);
-    await client.query('DELETE FROM pinned_news WHERE news_id = $1', [id]);
-    await client.query('DELETE FROM editor_pick WHERE news_id = $1', [id]);
-    await client.query('DELETE FROM news_categories WHERE news_id = $1', [id]);
-    await client.query('DELETE FROM news_images WHERE news_id = $1', [id]);
-    await client.query('DELETE FROM news_social_media WHERE news_id = $1', [id]);
-    await client.query('DELETE FROM news_videos WHERE news_id = $1', [id]);
-    await client.query('DELETE FROM news_content_blocks WHERE news_id = $1', [id]);
-    await client.query('DELETE FROM news_comments WHERE news_id = $1', [id]);
-    await client.query('DELETE FROM news_reactions WHERE news_id = $1', [id]);
-    await client.query('DELETE FROM news_shares WHERE news_id = $1', [id]);
-    await client.query('DELETE FROM user_saved_articles WHERE news_id = $1', [id]);
-    await client.query('DELETE FROM page_views WHERE news_id = $1', [id]);
-    await client.query('DELETE FROM news_approval_history WHERE news_id = $1', [id]);
-    await client.query('DELETE FROM news_approval WHERE news_id = $1', [id]);
-    await client.query('DELETE FROM post_promotions WHERE news_id = $1', [id]);
-    await client.query('DELETE FROM likes WHERE news_id = $1', [id]);
-    
-    await client.query('DELETE FROM news WHERE news_id = $1', [id]);
-
-    const ip = req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.ip || 'unknown';
-    
-    await logAdminActivity(
-      client,
-      adminId,
-      'delete_news',
-      'news',
-      id,
-      `Permanently deleted article: ${article.title}`,
-      ip
-    );
-
-    await client.query('COMMIT');
-
-    return res.status(200).json({
-      success: true,
-      message: 'Article permanently deleted',
-      action: 'delete'
+    const articlesByCategory = {};
+    articlesResult.rows.forEach(row => {
+      const catId = row.category_id;
+      if (!articlesByCategory[catId]) {
+        articlesByCategory[catId] = [];
+      }
+      if (articlesByCategory[catId].length < 8) {
+        articlesByCategory[catId].push(normalizeArticle(row));
+      }
     });
 
+    const categorySections = parentCategories
+      .map(cat => ({
+        categoryId: cat.category_id,
+        name: cat.name,
+        slug: cat.slug,
+        description: cat.description || '',
+        color: cat.color || '#6366f1',
+        icon: cat.icon || '📰',
+        orderIndex: cat.order_index,
+        articles: articlesByCategory[cat.category_id] || []
+      }))
+      .filter(section => section.articles.length > 0);
+
+    return res.json({
+      success: true,
+      sliderSlides: recent.slice(0, 8),
+      headlines: recent.slice(0, 12),
+      categorySections: categorySections
+    });
   } catch (error) {
-    console.error('[Delete] Error:', error.message);
-    console.error('[Delete] Stack:', error.stack);
-    
-    try {
-      await client.query('ROLLBACK');
-    } catch (rollbackError) {
-      console.error('[Delete] Rollback failed:', rollbackError);
-    }
-    
+    console.error('[client/home] ERROR:', error.message);
     return res.status(500).json({
       success: false,
       message: 'Internal server error',
-      error: error.message,
-      code: error.code
+      sliderSlides: [],
+      headlines: [],
+      categorySections: []
     });
-  } finally {
-    client.release();
   }
 });
 
-router.post('/bulk', requireDeleter, async (req, res) => {
-  const pool = getPool();
-  const client = await pool.connect();
-  
+router.get('/slider', async (req, res) => {
+  res.set({
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0'
+  });
+
   try {
-    await client.query('BEGIN');
+    const pool = getPool();
     
-    const { news_ids } = req.body;
-    const adminId = req.adminId;
+    const result = await pool.query(`
+      SELECT n.news_id, n.title, n.excerpt, n.slug, n.image_url, n.published_at, n.reading_time, n.views, n.likes_count, n.comments_count, n.share_count, n.meta_description,
+        COALESCE(a.first_name, 'Daily Vaibe') as first_name,
+        COALESCE(a.last_name, 'Editor') as last_name,
+        parent_cat.name as category_name,
+        parent_cat.slug as category_slug,
+        parent_cat.color as category_color,
+        parent_cat.icon as category_icon
+      FROM news n
+      LEFT JOIN admins a ON n.author_id = a.admin_id
+      LEFT JOIN categories c ON n.category_id = c.category_id
+      LEFT JOIN categories parent_cat ON COALESCE(c.parent_id, c.category_id) = parent_cat.category_id
+      WHERE n.status = 'published'
+      ORDER BY n.published_at DESC
+      LIMIT 8
+    `);
 
-    if (!news_ids || !Array.isArray(news_ids) || news_ids.length === 0) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({
-        success: false,
-        message: 'Valid news IDs array is required'
-      });
-    }
+    const slides = result.rows.map(normalizeArticle);
 
-    const results = {
-      success: [],
-      failed: []
-    };
-
-    for (const newsId of news_ids) {
-      try {
-        const checkResult = await client.query(
-          'SELECT news_id, title FROM news WHERE news_id = $1',
-          [newsId]
-        );
-
-        if (checkResult.rows.length === 0) {
-          results.failed.push({ id: newsId, reason: 'Not found' });
-          continue;
-        }
-
-        const article = checkResult.rows[0];
-
-        await client.query('DELETE FROM breaking_news WHERE news_id = $1', [newsId]);
-        await client.query('DELETE FROM featured_news WHERE news_id = $1', [newsId]);
-        await client.query('DELETE FROM pinned_news WHERE news_id = $1', [newsId]);
-        await client.query('DELETE FROM editor_pick WHERE news_id = $1', [newsId]);
-        await client.query('DELETE FROM news_categories WHERE news_id = $1', [newsId]);
-        await client.query('DELETE FROM news_images WHERE news_id = $1', [newsId]);
-        await client.query('DELETE FROM news_social_media WHERE news_id = $1', [newsId]);
-        await client.query('DELETE FROM news_videos WHERE news_id = $1', [newsId]);
-        await client.query('DELETE FROM news_content_blocks WHERE news_id = $1', [newsId]);
-        await client.query('DELETE FROM news_comments WHERE news_id = $1', [newsId]);
-        await client.query('DELETE FROM news_reactions WHERE news_id = $1', [newsId]);
-        await client.query('DELETE FROM news_shares WHERE news_id = $1', [newsId]);
-        await client.query('DELETE FROM user_saved_articles WHERE news_id = $1', [newsId]);
-        await client.query('DELETE FROM page_views WHERE news_id = $1', [newsId]);
-        await client.query('DELETE FROM news_approval_history WHERE news_id = $1', [newsId]);
-        await client.query('DELETE FROM news_approval WHERE news_id = $1', [newsId]);
-        await client.query('DELETE FROM post_promotions WHERE news_id = $1', [newsId]);
-        await client.query('DELETE FROM likes WHERE news_id = $1', [newsId]);
-        await client.query('DELETE FROM news WHERE news_id = $1', [newsId]);
-
-        results.success.push({ 
-          id: newsId, 
-          title: article.title
-        });
-
-      } catch (itemError) {
-        console.error(`Error processing news ${newsId}:`, itemError);
-        results.failed.push({ id: newsId, reason: itemError.message });
-      }
-    }
-
-    const ip = req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.ip || 'unknown';
-    
-    await logAdminActivity(
-      client,
-      adminId,
-      'bulk_delete',
-      'news',
-      null,
-      `Bulk deleted ${results.success.length} articles`,
-      ip
-    );
-
-    await client.query('COMMIT');
-
-    return res.status(200).json({
+    return res.json({
       success: true,
-      message: `Bulk operation completed: ${results.success.length} succeeded, ${results.failed.length} failed`,
-      results
+      slides: slides,
+      sliderSlides: slides
     });
-
   } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('[Bulk Delete] Error:', error);
+    console.error('[client/slider] ERROR:', error.message);
+    return res.status(500).json({
+      success: false,
+      slides: [],
+      sliderSlides: []
+    });
+  }
+});
+
+router.post('/slider/personalized', async (req, res) => {
+  res.set({
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0'
+  });
+
+  try {
+    const pool = getPool();
+    const { preferredCategories, limit } = req.body;
+    const finalLimit = Math.min(20, Math.max(1, parseInt(limit) || 8));
+    
+    let query;
+    let params;
+
+    if (preferredCategories && Array.isArray(preferredCategories) && preferredCategories.length > 0) {
+      query = `
+        SELECT n.news_id, n.title, n.excerpt, n.slug, n.image_url, n.published_at, n.reading_time, n.views, n.likes_count, n.comments_count, n.share_count, n.meta_description,
+          COALESCE(a.first_name, 'Daily Vaibe') as first_name,
+          COALESCE(a.last_name, 'Editor') as last_name,
+          parent_cat.name as category_name,
+          parent_cat.slug as category_slug,
+          parent_cat.color as category_color,
+          parent_cat.icon as category_icon
+        FROM news n
+        LEFT JOIN admins a ON n.author_id = a.admin_id
+        LEFT JOIN categories c ON n.category_id = c.category_id
+        LEFT JOIN categories parent_cat ON COALESCE(c.parent_id, c.category_id) = parent_cat.category_id
+        WHERE n.status = 'published' AND parent_cat.category_id = ANY($1::int[])
+        ORDER BY n.published_at DESC
+        LIMIT $2
+      `;
+      params = [preferredCategories, finalLimit];
+    } else {
+      query = `
+        SELECT n.news_id, n.title, n.excerpt, n.slug, n.image_url, n.published_at, n.reading_time, n.views, n.likes_count, n.comments_count, n.share_count, n.meta_description,
+          COALESCE(a.first_name, 'Daily Vaibe') as first_name,
+          COALESCE(a.last_name, 'Editor') as last_name,
+          parent_cat.name as category_name,
+          parent_cat.slug as category_slug,
+          parent_cat.color as category_color,
+          parent_cat.icon as category_icon
+        FROM news n
+        LEFT JOIN admins a ON n.author_id = a.admin_id
+        LEFT JOIN categories c ON n.category_id = c.category_id
+        LEFT JOIN categories parent_cat ON COALESCE(c.parent_id, c.category_id) = parent_cat.category_id
+        WHERE n.status = 'published'
+        ORDER BY n.published_at DESC
+        LIMIT $1
+      `;
+      params = [finalLimit];
+    }
+
+    const result = await pool.query(query, params);
+    const slides = result.rows.map(normalizeArticle);
+
+    return res.json({
+      success: true,
+      slides: slides,
+      sliderSlides: slides,
+      personalized: true
+    });
+  } catch (error) {
+    console.error('[client/slider/personalized] ERROR:', error.message);
+    return res.status(500).json({
+      success: false,
+      slides: [],
+      sliderSlides: []
+    });
+  }
+});
+
+router.get('/breaking', async (req, res) => {
+  res.set({
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0'
+  });
+
+  const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 50));
+  const page = Math.max(1, parseInt(req.query.page) || 1);
+  const offset = (page - 1) * limit;
+
+  try {
+    const pool = getPool();
+    
+    const result = await pool.query(`
+      SELECT n.news_id, n.title, n.excerpt, n.slug, n.image_url, n.published_at, n.reading_time, n.views, n.likes_count, n.comments_count, n.share_count, n.meta_description,
+        COALESCE(a.first_name, 'Daily Vaibe') as first_name,
+        COALESCE(a.last_name, 'Editor') as last_name,
+        c.name as category_name,
+        c.slug as category_slug,
+        c.color as category_color,
+        c.icon as category_icon,
+        bn.priority as breaking_level
+      FROM news n
+      LEFT JOIN admins a ON n.author_id = a.admin_id
+      LEFT JOIN categories c ON n.category_id = c.category_id
+      INNER JOIN breaking_news bn ON n.news_id = bn.news_id
+      WHERE n.status = 'published'
+        AND bn.manually_removed = false
+        AND (bn.ends_at IS NULL OR bn.ends_at > NOW())
+      ORDER BY 
+        CASE bn.priority
+          WHEN 'critical' THEN 1
+          WHEN 'high' THEN 2
+          WHEN 'medium' THEN 3
+          WHEN 'low' THEN 4
+          ELSE 5
+        END,
+        n.published_at DESC
+      LIMIT $1 OFFSET $2
+    `, [limit, offset]);
+
+    const news = result.rows.map(normalizeArticle);
+
+    return res.json({
+      success: true,
+      breakingNews: news,
+      news: news,
+      pagination: {
+        current_page: page,
+        per_page: limit,
+        has_next: news.length === limit,
+        has_prev: page > 1
+      }
+    });
+  } catch (error) {
+    console.error('[client/breaking] ERROR:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch breaking news',
+      breakingNews: [],
+      news: []
+    });
+  }
+});
+
+router.get('/trending', async (req, res) => {
+  res.set({
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0'
+  });
+
+  const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 50));
+  const page = Math.max(1, parseInt(req.query.page) || 1);
+  const offset = (page - 1) * limit;
+
+  try {
+    const pool = getPool();
+    
+    const result = await pool.query(`
+      SELECT n.news_id, n.title, n.excerpt, n.slug, n.image_url, n.published_at, n.reading_time, n.views, n.likes_count, n.comments_count, n.share_count, n.meta_description,
+        COALESCE(a.first_name, 'Daily Vaibe') as first_name,
+        COALESCE(a.last_name, 'Editor') as last_name,
+        c.name as category_name,
+        c.slug as category_slug,
+        c.color as category_color,
+        c.icon as category_icon,
+        (
+          COALESCE(n.views, 0) * 1 + 
+          COALESCE(n.likes_count, 0) * 5 + 
+          COALESCE(n.comments_count, 0) * 10 +
+          COALESCE(n.share_count, 0) * 15
+        ) * (
+          CASE 
+            WHEN EXTRACT(EPOCH FROM (NOW() - n.published_at)) / 3600 < 1 THEN 3.0
+            WHEN EXTRACT(EPOCH FROM (NOW() - n.published_at)) / 3600 < 3 THEN 2.0
+            WHEN EXTRACT(EPOCH FROM (NOW() - n.published_at)) / 3600 < 6 THEN 1.5
+            WHEN EXTRACT(EPOCH FROM (NOW() - n.published_at)) / 3600 < 12 THEN 1.2
+            WHEN EXTRACT(EPOCH FROM (NOW() - n.published_at)) / 3600 < 24 THEN 1.0
+            WHEN EXTRACT(EPOCH FROM (NOW() - n.published_at)) / 3600 < 48 THEN 0.5
+            ELSE 0.2
+          END
+        ) as trending_score
+      FROM news n
+      LEFT JOIN admins a ON n.author_id = a.admin_id
+      LEFT JOIN categories c ON n.category_id = c.category_id
+      WHERE n.status = 'published'
+      ORDER BY trending_score DESC, n.published_at DESC
+      LIMIT $1 OFFSET $2
+    `, [limit, offset]);
+
+    const news = result.rows.map(normalizeArticle);
+
+    return res.json({
+      success: true,
+      trending: news,
+      news: news,
+      pagination: {
+        current_page: page,
+        per_page: limit,
+        has_next: news.length === limit,
+        has_prev: page > 1
+      }
+    });
+  } catch (error) {
+    console.error('[client/trending] ERROR:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch trending news',
+      trending: [],
+      news: []
+    });
+  }
+});
+
+router.get('/featured', async (req, res) => {
+  res.set({
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0'
+  });
+
+  const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 50));
+  const page = Math.max(1, parseInt(req.query.page) || 1);
+  const offset = (page - 1) * limit;
+
+  try {
+    const pool = getPool();
+    
+    const result = await pool.query(`
+      SELECT n.news_id, n.title, n.excerpt, n.slug, n.image_url, n.published_at, n.reading_time, n.views, n.likes_count, n.comments_count, n.share_count, n.meta_description,
+        COALESCE(a.first_name, 'Daily Vaibe') as first_name,
+        COALESCE(a.last_name, 'Editor') as last_name,
+        c.name as category_name,
+        c.slug as category_slug,
+        c.color as category_color,
+        c.icon as category_icon,
+        fn.tier as featured_tier
+      FROM news n
+      LEFT JOIN admins a ON n.author_id = a.admin_id
+      LEFT JOIN categories c ON n.category_id = c.category_id
+      INNER JOIN featured_news fn ON n.news_id = fn.news_id
+      WHERE n.status = 'published'
+        AND fn.manually_removed = false
+        AND (fn.ends_at IS NULL OR fn.ends_at > NOW())
+      ORDER BY 
+        CASE fn.tier
+          WHEN 'gold' THEN 1
+          WHEN 'silver' THEN 2
+          WHEN 'bronze' THEN 3
+          ELSE 4
+        END,
+        n.published_at DESC
+      LIMIT $1 OFFSET $2
+    `, [limit, offset]);
+
+    const news = result.rows.map(normalizeArticle);
+
+    return res.json({
+      success: true,
+      featuredNews: news,
+      news: news,
+      pagination: {
+        current_page: page,
+        per_page: limit,
+        has_next: news.length === limit,
+        has_prev: page > 1
+      }
+    });
+  } catch (error) {
+    console.error('[client/featured] ERROR:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch featured news',
+      featuredNews: [],
+      news: []
+    });
+  }
+});
+
+router.post('/personalized', async (req, res) => {
+  res.set({
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0'
+  });
+
+  try {
+    const pool = getPool();
+    const { preferences } = req.body;
+    const preferredCategories = preferences?.preferredCategories || [];
+
+    let breakingQuery = `
+      SELECT n.news_id, n.title, n.excerpt, n.slug, n.image_url, n.published_at, n.reading_time, n.views, n.likes_count, n.comments_count, n.share_count, n.meta_description,
+        COALESCE(a.first_name, 'Daily Vaibe') as first_name,
+        COALESCE(a.last_name, 'Editor') as last_name,
+        c.name as category_name,
+        c.slug as category_slug,
+        c.color as category_color,
+        c.icon as category_icon
+      FROM news n
+      LEFT JOIN admins a ON n.author_id = a.admin_id
+      LEFT JOIN categories c ON n.category_id = c.category_id
+      INNER JOIN breaking_news bn ON n.news_id = bn.news_id
+      WHERE n.status = 'published'
+        AND bn.manually_removed = false
+        AND (bn.ends_at IS NULL OR bn.ends_at > NOW())
+      ORDER BY n.published_at DESC
+      LIMIT 10
+    `;
+
+    let featuredQuery = `
+      SELECT n.news_id, n.title, n.excerpt, n.slug, n.image_url, n.published_at, n.reading_time, n.views, n.likes_count, n.comments_count, n.share_count, n.meta_description,
+        COALESCE(a.first_name, 'Daily Vaibe') as first_name,
+        COALESCE(a.last_name, 'Editor') as last_name,
+        c.name as category_name,
+        c.slug as category_slug,
+        c.color as category_color,
+        c.icon as category_icon
+      FROM news n
+      LEFT JOIN admins a ON n.author_id = a.admin_id
+      LEFT JOIN categories c ON n.category_id = c.category_id
+      INNER JOIN featured_news fn ON n.news_id = fn.news_id
+      WHERE n.status = 'published'
+        AND fn.manually_removed = false
+        AND (fn.ends_at IS NULL OR fn.ends_at > NOW())
+      ORDER BY n.published_at DESC
+      LIMIT 10
+    `;
+
+    let trendingQuery;
+    let trendingParams;
+
+    if (preferredCategories.length > 0) {
+      trendingQuery = `
+        SELECT n.news_id, n.title, n.excerpt, n.slug, n.image_url, n.published_at, n.reading_time, n.views, n.likes_count, n.comments_count, n.share_count, n.meta_description,
+          COALESCE(a.first_name, 'Daily Vaibe') as first_name,
+          COALESCE(a.last_name, 'Editor') as last_name,
+          parent_cat.name as category_name,
+          parent_cat.slug as category_slug,
+          parent_cat.color as category_color,
+          parent_cat.icon as category_icon
+        FROM news n
+        LEFT JOIN admins a ON n.author_id = a.admin_id
+        LEFT JOIN categories c ON n.category_id = c.category_id
+        LEFT JOIN categories parent_cat ON COALESCE(c.parent_id, c.category_id) = parent_cat.category_id
+        WHERE n.status = 'published' AND parent_cat.category_id = ANY($1::int[])
+        ORDER BY n.published_at DESC
+        LIMIT 12
+      `;
+      trendingParams = [preferredCategories];
+    } else {
+      trendingQuery = `
+        SELECT n.news_id, n.title, n.excerpt, n.slug, n.image_url, n.published_at, n.reading_time, n.views, n.likes_count, n.comments_count, n.share_count, n.meta_description,
+          COALESCE(a.first_name, 'Daily Vaibe') as first_name,
+          COALESCE(a.last_name, 'Editor') as last_name,
+          parent_cat.name as category_name,
+          parent_cat.slug as category_slug,
+          parent_cat.color as category_color,
+          parent_cat.icon as category_icon
+        FROM news n
+        LEFT JOIN admins a ON n.author_id = a.admin_id
+        LEFT JOIN categories c ON n.category_id = c.category_id
+        LEFT JOIN categories parent_cat ON COALESCE(c.parent_id, c.category_id) = parent_cat.category_id
+        WHERE n.status = 'published'
+        ORDER BY n.published_at DESC
+        LIMIT 12
+      `;
+      trendingParams = [];
+    }
+
+    const parentCategoriesQuery = `
+      SELECT c.category_id, c.name, c.slug, c.description, c.color, c.icon, COALESCE(c.order_index, 999) as order_index
+      FROM categories c
+      WHERE c.parent_id IS NULL AND c.active = true
+      ORDER BY COALESCE(c.order_index, 999) ASC, c.name ASC
+      LIMIT 20
+    `;
+
+    const [breakingResult, featuredResult, trendingResult, categoriesResult] = await Promise.all([
+      pool.query(breakingQuery),
+      pool.query(featuredQuery),
+      pool.query(trendingQuery, trendingParams),
+      pool.query(parentCategoriesQuery)
+    ]);
+
+    const breaking = breakingResult.rows.map(normalizeArticle);
+    const featured = featuredResult.rows.map(normalizeArticle);
+    const trending = trendingResult.rows.map(normalizeArticle);
+    const parentCategories = categoriesResult.rows;
+
+    const categoryIds = parentCategories.map(c => c.category_id);
+    let categorySections = [];
+
+    if (categoryIds.length > 0) {
+      const articlesQuery = `
+        SELECT n.news_id, n.title, n.excerpt, n.slug, n.image_url, n.published_at, n.reading_time, n.views, n.likes_count, n.comments_count, n.share_count, n.meta_description,
+          COALESCE(a.first_name, 'Daily Vaibe') as first_name,
+          COALESCE(a.last_name, 'Editor') as last_name,
+          parent_cat.category_id,
+          parent_cat.name as category_name,
+          parent_cat.slug as category_slug,
+          parent_cat.color as category_color,
+          parent_cat.icon as category_icon
+        FROM news n
+        LEFT JOIN admins a ON n.author_id = a.admin_id
+        LEFT JOIN categories c ON n.category_id = c.category_id
+        LEFT JOIN categories parent_cat ON COALESCE(c.parent_id, c.category_id) = parent_cat.category_id
+        WHERE n.status = 'published' AND parent_cat.category_id = ANY($1::int[])
+        ORDER BY parent_cat.category_id, n.published_at DESC
+      `;
+
+      const articlesResult = await pool.query(articlesQuery, [categoryIds]);
+      
+      const articlesByCategory = {};
+      articlesResult.rows.forEach(row => {
+        const catId = row.category_id;
+        if (!articlesByCategory[catId]) {
+          articlesByCategory[catId] = [];
+        }
+        if (articlesByCategory[catId].length < 8) {
+          articlesByCategory[catId].push(normalizeArticle(row));
+        }
+      });
+
+      categorySections = parentCategories
+        .map(cat => ({
+          categoryId: cat.category_id,
+          name: cat.name,
+          slug: cat.slug,
+          description: cat.description || '',
+          color: cat.color || '#6366f1',
+          icon: cat.icon || '📰',
+          orderIndex: cat.order_index,
+          articles: articlesByCategory[cat.category_id] || []
+        }))
+        .filter(section => section.articles.length > 0);
+    }
+
+    return res.json({
+      success: true,
+      breakingNews: breaking,
+      featuredNews: featured,
+      trending: trending,
+      sliderSlides: featured.slice(0, 8),
+      headlines: trending.slice(0, 12),
+      categorySections: categorySections,
+      personalized: true
+    });
+  } catch (error) {
+    console.error('[client/personalized] ERROR:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch personalized content',
+      breakingNews: [],
+      featuredNews: [],
+      trending: [],
+      sliderSlides: [],
+      headlines: [],
+      categorySections: []
+    });
+  }
+});
+
+router.get('/timeline', async (req, res) => {
+  res.set({
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0'
+  });
+
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
+  const page = Math.max(1, parseInt(req.query.page) || 1);
+  const offset = (page - 1) * limit;
+
+  try {
+    const pool = getPool();
+    
+    const [articlesResult, countResult] = await Promise.all([
+      pool.query(`
+        SELECT n.news_id, n.title, n.excerpt, n.slug, n.image_url, n.published_at, n.reading_time, n.views, n.likes_count, n.comments_count, n.share_count,
+          COALESCE(a.first_name, 'Daily Vaibe') as first_name,
+          COALESCE(a.last_name, 'Editor') as last_name,
+          c.name as category_name,
+          c.slug as category_slug
+        FROM news n
+        LEFT JOIN admins a ON n.author_id = a.admin_id
+        LEFT JOIN categories c ON n.category_id = c.category_id
+        WHERE n.status = 'published'
+        ORDER BY n.published_at DESC
+        LIMIT $1 OFFSET $2
+      `, [limit, offset]),
+      pool.query(`SELECT COUNT(*) as total FROM news WHERE status = 'published'`)
+    ]);
+
+    const articles = articlesResult.rows.map(a => ({
+      news_id: a.news_id,
+      title: a.title,
+      excerpt: a.excerpt,
+      slug: a.slug,
+      image_url: getImageUrl(a.image_url),
+      published_at: a.published_at,
+      reading_time: a.reading_time || 3,
+      views: a.views || 0,
+      likes_count: a.likes_count || 0,
+      comments_count: a.comments_count || 0,
+      share_count: a.share_count || 0,
+      first_name: a.first_name,
+      last_name: a.last_name,
+      category_name: a.category_name,
+      category_slug: a.category_slug
+    }));
+
+    const totalItems = parseInt(countResult.rows[0]?.total || 0);
+
+    return res.json({
+      success: true,
+      timeline: articles,
+      articles: articles,
+      pagination: {
+        current_page: page,
+        per_page: limit,
+        total_items: totalItems,
+        total_pages: Math.ceil(totalItems / limit),
+        has_next: (page * limit) < totalItems,
+        has_prev: page > 1
+      }
+    });
+  } catch (error) {
+    console.error('[client/timeline] ERROR:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch timeline',
+      timeline: [],
+      articles: []
+    });
+  }
+});
+
+router.get('/quotes', async (req, res) => {
+  res.set({
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0'
+  });
+
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 84));
+
+  try {
+    const pool = getPool();
+    
+    const result = await pool.query(`
+      SELECT quote_id, quote_text, sayer_name, sayer_title, image_url, active, created_at, updated_at
+      FROM news_quotes
+      WHERE active = true
+      ORDER BY created_at DESC
+      LIMIT $1
+    `, [limit]);
+
+    const quotes = result.rows.map(q => ({
+      quote_id: q.quote_id,
+      quote_text: q.quote_text,
+      sayer_name: q.sayer_name,
+      sayer_title: q.sayer_title || '',
+      sayer_image_url: getImageUrl(q.image_url),
+      active: q.active,
+      created_at: q.created_at,
+      updated_at: q.updated_at
+    }));
+
+    const now = new Date();
+    const threeDaysAgo = new Date(now.getTime() - (3 * 24 * 60 * 60 * 1000));
+    const sevenDaysAgo = new Date(now.getTime() - (7 * 24 * 60 * 60 * 1000));
+
+    const freshQuotes = quotes.filter(q => new Date(q.created_at) >= threeDaysAgo);
+    const strikingQuotes = quotes.filter(q => {
+      const created = new Date(q.created_at);
+      return created < threeDaysAgo && created >= sevenDaysAgo;
+    }).slice(0, 12);
+    const trendingQuotes = quotes.filter(q => new Date(q.created_at) < sevenDaysAgo).slice(0, 12);
+
+    return res.json({
+      success: true,
+      quotes: quotes,
+      strikingQuotes: strikingQuotes,
+      trendingQuotes: trendingQuotes,
+      total: quotes.length
+    });
+  } catch (error) {
+    console.error('[client/quotes] ERROR:', error.message);
     return res.status(500).json({
       success: false,
       message: 'Internal server error',
-      error: error.message
+      quotes: [],
+      strikingQuotes: [],
+      trendingQuotes: []
     });
-  } finally {
-    client.release();
   }
 });
 
