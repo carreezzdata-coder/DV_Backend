@@ -1,3 +1,5 @@
+//routes/admin/retrieveposts.js
+
 const express = require('express');
 const router = express.Router();
 const { getPool } = require('../../config/db');
@@ -15,8 +17,8 @@ const getImageUrl = (imageUrl) => {
 
   const cleanPath = imageUrl.startsWith('/') ? imageUrl.substring(1) : imageUrl;
 
-  if (process.env.NODE_ENV === 'development') {
-    return `http://localhost:5000/${cleanPath}`;
+  if (cloudflareService.isEnabled()) {
+    return cloudflareService.getPublicUrl(cleanPath);
   }
 
   const r2Url = process.env.R2_PUBLIC_URL;
@@ -361,6 +363,7 @@ router.get('/:id', requireAdminAuth, async (req, res) => {
 
     const processedArticle = {
       ...article,
+      image_url: getImageUrl(article.image_url),
       author_name: `${article.first_name || 'Unknown'} ${article.last_name || 'Author'}`,
       tags: tagsArray,
       seo_keywords: keywordsArray,
