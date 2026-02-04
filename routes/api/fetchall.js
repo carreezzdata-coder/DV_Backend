@@ -1,3 +1,5 @@
+//routes/api/fetchall.js
+
 const express = require('express');
 const router = express.Router();
 const { getPool } = require('../../config/db');
@@ -10,14 +12,12 @@ const getImageUrl = (imageUrl) => {
   if (cloudflareService.isEnabled()) {
     return cloudflareService.getPublicUrl(cleanPath);
   }
-  const isProduction = process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production' || process.env.RENDER === 'true';
-  if (!isProduction) return `http://localhost:5000/${cleanPath}`;
   const r2Url = process.env.R2_PUBLIC_URL;
   if (r2Url) {
     const cleanUrl = r2Url.endsWith('/') ? r2Url.slice(0, -1) : r2Url;
     return `${cleanUrl}/${cleanPath}`;
   }
-  return `https://www.dailyvaibe.com/${cleanPath}`;
+  return imageUrl;
 };
 
 const normalizeArticle = (article) => ({
