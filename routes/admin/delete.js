@@ -16,19 +16,6 @@ const logAdminActivity = async (client, adminId, action, targetType, targetId, d
   }
 };
 
-// Safe delete helper - doesn't fail if table doesn't exist or no rows found
-const safeDelete = async (client, tableName, newsId) => {
-  try {
-    const result = await client.query(`DELETE FROM ${tableName} WHERE news_id = $1`, [newsId]);
-    console.log(`[Delete] Deleted ${result.rowCount} rows from ${tableName}`);
-    return result.rowCount;
-  } catch (error) {
-    // If table doesn't exist or other error, log but continue
-    console.warn(`[Delete] Warning deleting from ${tableName}:`, error.message);
-    return 0;
-  }
-};
-
 router.delete('/:id', requireDeleter, async (req, res) => {
   const pool = getPool();
   const client = await pool.connect();
@@ -39,7 +26,7 @@ router.delete('/:id', requireDeleter, async (req, res) => {
     const { id } = req.params;
     const adminId = req.adminId;
 
-    console.log(`[Delete] Starting delete for news_id: ${id}`);
+    console.log(`[DELETE NUCLEAR] Starting delete for news_id: ${id}`);
 
     if (!id || !/^\d+$/.test(id)) {
       await client.query('ROLLBACK');
@@ -49,6 +36,7 @@ router.delete('/:id', requireDeleter, async (req, res) => {
       });
     }
 
+    // Check if article exists
     const checkQuery = 'SELECT news_id, title, author_id, status FROM news WHERE news_id = $1';
     const checkResult = await client.query(checkQuery, [id]);
 
@@ -61,41 +49,23 @@ router.delete('/:id', requireDeleter, async (req, res) => {
     }
 
     const article = checkResult.rows[0];
-    console.log(`[Delete] Found article: "${article.title}"`);
+    console.log(`[DELETE NUCLEAR] Found article: "${article.title}"`);
 
-    // Delete from all related tables - using safe delete to avoid errors
-    let totalDeleted = 0;
+    // NUCLEAR OPTION: Delete everything in one CASCADE query
+    // This works because PostgreSQL will follow foreign key cascades
+    const deleteResult = await client.query('DELETE FROM news WHERE news_id = $1', [id]);
     
-    totalDeleted += await safeDelete(client, 'breaking_news', id);
-    totalDeleted += await safeDelete(client, 'featured_news', id);
-    totalDeleted += await safeDelete(client, 'pinned_news', id);
-    totalDeleted += await safeDelete(client, 'news_categories', id);
-    totalDeleted += await safeDelete(client, 'news_images', id);
-    totalDeleted += await safeDelete(client, 'news_social_media', id);
-    totalDeleted += await safeDelete(client, 'news_videos', id);
-    totalDeleted += await safeDelete(client, 'news_content_blocks', id);
-    totalDeleted += await safeDelete(client, 'news_comments', id);
-    totalDeleted += await safeDelete(client, 'news_reactions', id);
-    totalDeleted += await safeDelete(client, 'news_shares', id);
-    totalDeleted += await safeDelete(client, 'user_saved_articles', id);
-    totalDeleted += await safeDelete(client, 'page_views', id);
-    totalDeleted += await safeDelete(client, 'news_approval_history', id);
-    totalDeleted += await safeDelete(client, 'news_approval', id);
-    
-    console.log(`[Delete] Deleted ${totalDeleted} related records`);
-    
-    // Delete the main news record
-    const newsDeleteResult = await client.query('DELETE FROM news WHERE news_id = $1', [id]);
-    console.log(`[Delete] Deleted ${newsDeleteResult.rowCount} news record(s)`);
+    console.log(`[DELETE NUCLEAR] Deleted ${deleteResult.rowCount} news record(s)`);
 
-    if (newsDeleteResult.rowCount === 0) {
+    if (deleteResult.rowCount === 0) {
       await client.query('ROLLBACK');
       return res.status(500).json({
         success: false,
-        message: 'Failed to delete news article'
+        message: 'Failed to delete news article - no rows affected'
       });
     }
 
+    // Log the activity
     const ip = req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.ip || 'unknown';
     
     await logAdminActivity(
@@ -108,32 +78,36 @@ router.delete('/:id', requireDeleter, async (req, res) => {
       ip
     );
 
+    // COMMIT the transaction
     await client.query('COMMIT');
-    console.log(`[Delete] Successfully committed deletion of news_id: ${id}`);
+    console.log(`[DELETE NUCLEAR] Successfully committed deletion of news_id: ${id}`);
 
     return res.status(200).json({
       success: true,
       message: 'Article permanently deleted',
       action: 'delete',
-      deleted_records: totalDeleted + newsDeleteResult.rowCount
+      news_id: id,
+      title: article.title
     });
 
   } catch (error) {
-    console.error('[Delete] Error:', error.message);
-    console.error('[Delete] Stack:', error.stack);
+    console.error('[DELETE NUCLEAR] Error:', error.message);
+    console.error('[DELETE NUCLEAR] Error Code:', error.code);
+    console.error('[DELETE NUCLEAR] Stack:', error.stack);
     
     try {
       await client.query('ROLLBACK');
-      console.log('[Delete] Transaction rolled back');
+      console.log('[DELETE NUCLEAR] Transaction rolled back');
     } catch (rollbackError) {
-      console.error('[Delete] Rollback failed:', rollbackError);
+      console.error('[DELETE NUCLEAR] Rollback failed:', rollbackError);
     }
     
     return res.status(500).json({
       success: false,
       message: 'Internal server error',
       error: error.message,
-      code: error.code
+      code: error.code,
+      detail: error.detail || 'No additional details'
     });
   } finally {
     client.release();
@@ -158,6 +132,8 @@ router.post('/bulk', requireDeleter, async (req, res) => {
       });
     }
 
+    console.log(`[DELETE BULK NUCLEAR] Deleting ${news_ids.length} articles`);
+
     const results = {
       success: [],
       failed: []
@@ -177,36 +153,21 @@ router.post('/bulk', requireDeleter, async (req, res) => {
 
         const article = checkResult.rows[0];
 
-        // Delete from all related tables
-        await safeDelete(client, 'breaking_news', newsId);
-        await safeDelete(client, 'featured_news', newsId);
-        await safeDelete(client, 'pinned_news', newsId);
-        await safeDelete(client, 'news_categories', newsId);
-        await safeDelete(client, 'news_images', newsId);
-        await safeDelete(client, 'news_social_media', newsId);
-        await safeDelete(client, 'news_videos', newsId);
-        await safeDelete(client, 'news_content_blocks', newsId);
-        await safeDelete(client, 'news_comments', newsId);
-        await safeDelete(client, 'news_reactions', newsId);
-        await safeDelete(client, 'news_shares', newsId);
-        await safeDelete(client, 'user_saved_articles', newsId);
-        await safeDelete(client, 'page_views', newsId);
-        await safeDelete(client, 'news_approval_history', newsId);
-        await safeDelete(client, 'news_approval', newsId);
+        // NUCLEAR DELETE - cascades will handle related tables
+        const deleteResult = await client.query('DELETE FROM news WHERE news_id = $1', [newsId]);
         
-        const newsDeleteResult = await client.query('DELETE FROM news WHERE news_id = $1', [newsId]);
-        
-        if (newsDeleteResult.rowCount > 0) {
+        if (deleteResult.rowCount > 0) {
           results.success.push({ 
             id: newsId, 
             title: article.title
           });
+          console.log(`[DELETE BULK NUCLEAR] Deleted: ${article.title}`);
         } else {
-          results.failed.push({ id: newsId, reason: 'Delete failed' });
+          results.failed.push({ id: newsId, reason: 'Delete failed - no rows affected' });
         }
 
       } catch (itemError) {
-        console.error(`Error processing news ${newsId}:`, itemError);
+        console.error(`[DELETE BULK NUCLEAR] Error processing news ${newsId}:`, itemError);
         results.failed.push({ id: newsId, reason: itemError.message });
       }
     }
@@ -224,6 +185,7 @@ router.post('/bulk', requireDeleter, async (req, res) => {
     );
 
     await client.query('COMMIT');
+    console.log(`[DELETE BULK NUCLEAR] Successfully committed bulk deletion`);
 
     return res.status(200).json({
       success: true,
@@ -233,7 +195,7 @@ router.post('/bulk', requireDeleter, async (req, res) => {
 
   } catch (error) {
     await client.query('ROLLBACK');
-    console.error('[Bulk Delete] Error:', error);
+    console.error('[DELETE BULK NUCLEAR] Error:', error);
     return res.status(500).json({
       success: false,
       message: 'Internal server error',
