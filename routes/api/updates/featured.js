@@ -42,30 +42,23 @@ const normalizeArticle = (article) => ({
   firstName: article.first_name || 'Daily Vaibe',
   last_name: article.last_name || 'Editor',
   lastName: article.last_name || 'Editor',
-  category_name: article.category_name || 'Uncategorized',
-  categoryName: article.category_name || 'Uncategorized',
-  category_slug: article.category_slug || 'general',
-  categorySlug: article.category_slug || 'general',
-  category_color: article.category_color || '#6366f1',
-  categoryColor: article.category_color || '#6366f1',
-  category_icon: article.category_icon || '📰',
-  categoryIcon: article.category_icon || '📰',
+  category_name: article.category_name,
+  categoryName: article.category_name,
+  category_slug: article.category_slug,
+  categorySlug: article.category_slug,
+  category_color: article.category_color,
+  categoryColor: article.category_color,
+  category_icon: article.category_icon,
+  categoryIcon: article.category_icon,
   meta_description: article.meta_description,
-  metaDescription: article.meta_description,
   tags: article.tags ? article.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
   featured: {
     tier: article.featured_tier,
     started_at: article.featured_started_at,
-    startedAt: article.featured_started_at,
     ends_at: article.featured_ends_at,
-    endsAt: article.featured_ends_at,
     emoji: article.featured_tier === 'gold' ? '⭐' : 
            article.featured_tier === 'silver' ? '🌟' : '✨'
-  },
-  trending_score: article.trending_score || 0,
-  trendingScore: article.trending_score || 0,
-  hours_ago: article.hours_ago || 0,
-  hoursAgo: article.hours_ago || 0
+  }
 });
 
 router.get('/', async (req, res) => {
@@ -103,24 +96,7 @@ router.get('/', async (req, res) => {
           c.icon as category_icon,
           f.tier as featured_tier,
           f.starts_at as featured_started_at,
-          f.ends_at as featured_ends_at,
-          EXTRACT(EPOCH FROM (NOW() - n.published_at)) / 3600 as hours_ago,
-          (
-            COALESCE(n.views, 0) * 1 + 
-            COALESCE(n.likes_count, 0) * 5 + 
-            COALESCE(n.comments_count, 0) * 10 +
-            COALESCE(n.share_count, 0) * 15
-          ) * (
-            CASE 
-              WHEN EXTRACT(EPOCH FROM (NOW() - n.published_at)) / 3600 < 1 THEN 3.0
-              WHEN EXTRACT(EPOCH FROM (NOW() - n.published_at)) / 3600 < 3 THEN 2.0
-              WHEN EXTRACT(EPOCH FROM (NOW() - n.published_at)) / 3600 < 6 THEN 1.5
-              WHEN EXTRACT(EPOCH FROM (NOW() - n.published_at)) / 3600 < 12 THEN 1.2
-              WHEN EXTRACT(EPOCH FROM (NOW() - n.published_at)) / 3600 < 24 THEN 1.0
-              WHEN EXTRACT(EPOCH FROM (NOW() - n.published_at)) / 3600 < 48 THEN 0.5
-              ELSE 0.2
-            END
-          ) as trending_score
+          f.ends_at as featured_ends_at
         FROM featured_news f
         INNER JOIN news n ON f.news_id = n.news_id
         LEFT JOIN admins a ON n.author_id = a.admin_id
@@ -147,7 +123,6 @@ router.get('/', async (req, res) => {
     return res.json({
       success: true,
       news: newsResult.rows.map(normalizeArticle),
-      featuredNews: newsResult.rows.map(normalizeArticle),
       pagination: {
         current_page: page,
         per_page: limit,
@@ -162,16 +137,7 @@ router.get('/', async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Failed to fetch featured news',
-      news: [],
-      featuredNews: [],
-      pagination: {
-        current_page: 1,
-        per_page: 50,
-        total_items: 0,
-        total_pages: 0,
-        has_next: false,
-        has_prev: false
-      }
+      news: []
     });
   }
 });
