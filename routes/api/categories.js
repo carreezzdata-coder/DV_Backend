@@ -1,9 +1,9 @@
+//routes/api/categories.js
+
 const express = require('express');
 const router = express.Router();
 const { getPool } = require('../../config/db');
 const cloudflareService = require('../../services/cloudflareService');
-
-
 
 const { FRONTEND_URL, CLIENT_URL, ADMIN_URL, API_DOMAIN, ALLOWED_ORIGINS, isOriginAllowed } = require('../../config/frontendconfig');
 
@@ -14,16 +14,12 @@ const getImageUrl = (imageUrl) => {
   if (cloudflareService.isEnabled()) {
     return cloudflareService.getPublicUrl(cleanPath);
   }
-  const isProduction = process.env.NODE_ENV === 'production' || 
-                       process.env.VERCEL_ENV === 'production' ||
-                       process.env.RENDER === 'true';
-  if (!isProduction) return `http://localhost:5000/${cleanPath}`;
   const r2Url = process.env.R2_PUBLIC_URL;
   if (r2Url) {
     const cleanUrl = r2Url.endsWith('/') ? r2Url.slice(0, -1) : r2Url;
     return `${cleanUrl}/${cleanPath}`;
   }
-  return `https://www.dailyvaibe.com/${cleanPath}`;
+  return imageUrl;
 };
 
 router.get('/slugs', async (req, res) => {
