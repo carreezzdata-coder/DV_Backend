@@ -1,12 +1,9 @@
-//routes/admin/delete.js
-
 const express = require('express');
 const router = express.Router();
 const { getPool } = require('../../config/db');
 const { FRONTEND_URL, CLIENT_URL, ADMIN_URL, API_DOMAIN, ALLOWED_ORIGINS } = require('../../config/frontendconfig');
 const requireAdminAuth = require('../../middleware/adminAuth');
 const { requireDeleter } = require('../../middleware/rolePermissions');
-const cloudflareService = require('../../services/cloudflareService');
 
 const logAdminActivity = async (client, adminId, action, targetType, targetId, details, ip) => {
   try {
@@ -51,10 +48,10 @@ router.delete('/:id', requireDeleter, async (req, res) => {
 
     const article = checkResult.rows[0];
 
+    // Delete from all related tables in correct order
     await client.query('DELETE FROM breaking_news WHERE news_id = $1', [id]);
     await client.query('DELETE FROM featured_news WHERE news_id = $1', [id]);
     await client.query('DELETE FROM pinned_news WHERE news_id = $1', [id]);
-    await client.query('DELETE FROM editor_pick WHERE news_id = $1', [id]);
     await client.query('DELETE FROM news_categories WHERE news_id = $1', [id]);
     await client.query('DELETE FROM news_images WHERE news_id = $1', [id]);
     await client.query('DELETE FROM news_social_media WHERE news_id = $1', [id]);
@@ -67,9 +64,8 @@ router.delete('/:id', requireDeleter, async (req, res) => {
     await client.query('DELETE FROM page_views WHERE news_id = $1', [id]);
     await client.query('DELETE FROM news_approval_history WHERE news_id = $1', [id]);
     await client.query('DELETE FROM news_approval WHERE news_id = $1', [id]);
-    await client.query('DELETE FROM post_promotions WHERE news_id = $1', [id]);
-    await client.query('DELETE FROM likes WHERE news_id = $1', [id]);
     
+    // Delete the main news record
     await client.query('DELETE FROM news WHERE news_id = $1', [id]);
 
     const ip = req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.ip || 'unknown';
@@ -150,10 +146,10 @@ router.post('/bulk', requireDeleter, async (req, res) => {
 
         const article = checkResult.rows[0];
 
+        // Delete from all related tables
         await client.query('DELETE FROM breaking_news WHERE news_id = $1', [newsId]);
         await client.query('DELETE FROM featured_news WHERE news_id = $1', [newsId]);
         await client.query('DELETE FROM pinned_news WHERE news_id = $1', [newsId]);
-        await client.query('DELETE FROM editor_pick WHERE news_id = $1', [newsId]);
         await client.query('DELETE FROM news_categories WHERE news_id = $1', [newsId]);
         await client.query('DELETE FROM news_images WHERE news_id = $1', [newsId]);
         await client.query('DELETE FROM news_social_media WHERE news_id = $1', [newsId]);
@@ -166,8 +162,6 @@ router.post('/bulk', requireDeleter, async (req, res) => {
         await client.query('DELETE FROM page_views WHERE news_id = $1', [newsId]);
         await client.query('DELETE FROM news_approval_history WHERE news_id = $1', [newsId]);
         await client.query('DELETE FROM news_approval WHERE news_id = $1', [newsId]);
-        await client.query('DELETE FROM post_promotions WHERE news_id = $1', [newsId]);
-        await client.query('DELETE FROM likes WHERE news_id = $1', [newsId]);
         await client.query('DELETE FROM news WHERE news_id = $1', [newsId]);
 
         results.success.push({ 
