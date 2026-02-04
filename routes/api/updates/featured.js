@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getPool } = require('../../../config/db');
 const cloudflareService = require('../../../services/cloudflareService');
+const { FRONTEND_URL, CLIENT_URL, ADMIN_URL, API_DOMAIN, ALLOWED_ORIGINS, isOriginAllowed } = require('../../../config/frontendconfig');
 
 const getImageUrl = (imageUrl) => {
   if (!imageUrl) return null;
