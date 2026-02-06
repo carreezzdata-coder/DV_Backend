@@ -1,4 +1,3 @@
-// backend/routes/admin/auth.js
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
@@ -8,9 +7,6 @@ const router = express.Router();
 
 const generateCSRFToken = () => crypto.randomBytes(32).toString('hex');
 
-// ============================================================================
-// LOGIN
-// ============================================================================
 router.post('/login', async (req, res) => {
   let pool;
   try {
@@ -56,7 +52,6 @@ router.post('/login', async (req, res) => {
 
     console.log('[Admin Login] Attempt for:', trimmedIdentifier);
 
-    // ✅ FIX: Cast ENUM types to text to ensure proper string handling
     const adminResult = await pool.query(
       `SELECT 
         admin_id, 
@@ -103,7 +98,6 @@ router.post('/login', async (req, res) => {
       username: admin.username
     });
 
-    // ✅ Password verification using bcryptjs
     let isValidPassword = false;
 
     try {
@@ -134,7 +128,6 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // ✅ Regenerate session for security
     req.session.regenerate(async (err) => {
       if (err) {
         console.error('[Admin Login] Session regeneration error:', err);
@@ -149,20 +142,17 @@ router.post('/login', async (req, res) => {
       }
 
       try {
-        // ✅ Store admin info in session
         req.session.adminId = admin.admin_id;
         req.session.loginTime = new Date().toISOString();
 
         const csrfToken = generateCSRFToken();
         req.session.csrfToken = csrfToken;
 
-        // ✅ Update last login
         await pool.query(
           'UPDATE admins SET last_login = NOW() WHERE admin_id = $1',
           [admin.admin_id]
         );
 
-        // ✅ FIX: Normalize role to lowercase string
         const normalizedRole = admin.role ? admin.role.toLowerCase() : 'moderator';
 
         console.log('[Admin Login] Login successful:', {
@@ -177,7 +167,7 @@ router.post('/login', async (req, res) => {
           last_name: admin.last_name,
           email: admin.email,
           phone: admin.phone,
-          role: normalizedRole,  // ✅ Send normalized role
+          role: normalizedRole,
           permissions: admin.permissions || [],
           last_login: new Date().toISOString(),
           status: admin.status
@@ -218,9 +208,6 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// ============================================================================
-// LOGOUT
-// ============================================================================
 router.post('/logout', (req, res) => {
   console.log('[Admin Logout] Attempting logout for session:', req.session?.id);
 
@@ -239,6 +226,20 @@ router.post('/logout', (req, res) => {
 
     console.log('[Admin Logout] Logout successful - session destroyed');
 
+    res.clearCookie('dailyvaibe_admin_session', {
+      path: '/',
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
+    });
+
+    res.clearCookie('connect.sid', {
+      path: '/',
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
+    });
+
     res.status(200).json({
       success: true,
       authenticated: false,
@@ -250,9 +251,6 @@ router.post('/logout', (req, res) => {
   });
 });
 
-// ============================================================================
-// VERIFY SESSION
-// ============================================================================
 router.get('/verify', async (req, res) => {
   try {
     const pool = getPool();
@@ -276,7 +274,6 @@ router.get('/verify', async (req, res) => {
       });
     }
 
-    // ✅ FIX: Cast ENUM types to text
     const adminResult = await pool.query(
       `SELECT 
         admin_id, 
@@ -319,12 +316,10 @@ router.get('/verify', async (req, res) => {
 
     const admin = adminResult.rows[0];
 
-    // ✅ Generate CSRF token if missing
     if (!req.session.csrfToken) {
       req.session.csrfToken = generateCSRFToken();
     }
 
-    // ✅ FIX: Normalize role to lowercase string
     const normalizedRole = admin.role ? admin.role.toLowerCase() : 'moderator';
 
     console.log('[Admin Verify] Session verified successfully:', {
@@ -342,7 +337,7 @@ router.get('/verify', async (req, res) => {
         last_name: admin.last_name,
         email: admin.email,
         phone: admin.phone,
-        role: normalizedRole,  // ✅ Send normalized role
+        role: normalizedRole,
         permissions: admin.permissions || [],
         last_login: admin.last_login,
         status: admin.status
