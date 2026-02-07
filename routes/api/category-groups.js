@@ -1,5 +1,6 @@
 const express = require('express');
-
+const { getPool } = require('../../config/db');
+const cloudflareService = require('../../services/cloudflareService');
 const { FRONTEND_URL, CLIENT_URL, ADMIN_URL, API_DOMAIN, ALLOWED_ORIGINS, isOriginAllowed } = require('../../config/frontendconfig');
 
 const router = express.Router();
@@ -30,12 +31,15 @@ const GROUP_MAPPINGS = {
   'world': ['national', 'east-africa', 'africa', 'international', 'live', 'world-reports'],
   'counties': ['nairobi', 'coast', 'mountain', 'lake-region', 'rift-valley', 'northern', 'eastern', 'western', 'county-reports'],
   'politics': ['politics', 'governance', 'legal', 'elections', 'parliament', 'political-reports', 'politics-others'],
-  'business': ['business', 'companies', 'finance-markets', 'investment', 'enterprise', 'economy', 'banking', 'business-reports'],
+  'business': ['business', 'companies', 'finance-markets', 'investment', 'enterprise', 'economy', 'banking', 'jobs-careers', 'real-estate', 'agriculture', 'business-reports'],
   'opinion': ['opinion', 'editorials', 'columnists', 'bloggers', 'letters', 'trail-blazing', 'ai-graphics', 'analysis'],
-  'sports': ['sports', 'sport', 'football', 'athletics', 'rugby', 'motorsport', 'sports-vybe', 'cricket', 'basketball', 'other-sports', 'sports-others'],
-  'lifestyle': ['lifestyle', 'motoring', 'culture', 'family', 'relationships', 'travel', 'wellness', 'fashion', 'food', 'lifestyle-others'],
+  'sports': ['sports', 'sport', 'football', 'athletics', 'rugby', 'motorsport', 'sports-vybe', 'cricket', 'team-news', 'football-transfers', 'other-sports', 'sports-others'],
+  'lifestyle': ['lifestyle', 'motoring', 'culture', 'family', 'relationships', 'travel', 'wellness', 'fashion', 'food', 'religion-faith', 'lifestyle-others'],
   'entertainment': ['entertainment', 'buzz', 'trending', 'trending-pics', 'gossip', 'life-stories', 'music', 'movies', 'celebrity', 'entertainment-others'],
   'tech': ['tech', 'technology', 'innovations', 'gadgets', 'startups', 'digital-life', 'ai', 'mobile', 'gaming', 'tech-reports', 'tech-others'],
+  'health': ['health', 'medical-news', 'wellness-fitness', 'mental-health', 'chronic-illnesses', 'traditional-medicine'],
+  'education': ['education', 'primary-secondary', 'universities', 'exams-results', 'scholarships', 'teachers-tsc'],
+  'crime-security': ['crime-security', 'crime-news', 'court-cases', 'police-news', 'road-accidents'],
   'other': ['other', 'others', 'human-rights', 'climate-crisis', 'investigations', 'interactives', 'features', 'in-pictures', 'special-reports']
 };
 
@@ -49,6 +53,9 @@ const GROUP_INFO = {
   'lifestyle': { name: 'Life & Style', description: 'Lifestyle, culture and wellness', color: '#e91e63', icon: '🎭' },
   'entertainment': { name: 'Entertainment', description: 'Entertainment and celebrity news', color: '#ff6b6b', icon: '🎉' },
   'tech': { name: 'Technology', description: 'Tech news and innovations', color: '#1abc9c', icon: '💻' },
+  'health': { name: 'Health', description: 'Health, wellness and medical news', color: '#16a085', icon: '🏥' },
+  'education': { name: 'Education', description: 'Education news, exams and learning', color: '#3498db', icon: '📚' },
+  'crime-security': { name: 'Crime & Security', description: 'Crime reports and security updates', color: '#c0392b', icon: '🚔' },
   'other': { name: 'Other', description: 'Miscellaneous content', color: '#34495e', icon: '📌' }
 };
 
