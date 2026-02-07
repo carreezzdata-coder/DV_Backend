@@ -1,5 +1,8 @@
 const express = require('express');
 const router = express.Router();
+const { getPool } = require('../../config/db');
+const cloudflareService = require('../../services/cloudflareService');
+const { FRONTEND_URL, CLIENT_URL, ADMIN_URL, API_DOMAIN, ALLOWED_ORIGINS, isOriginAllowed } = require('../../config/frontendconfig');
 
 const CATEGORY_GROUP_METADATA = {
   1: {
@@ -65,6 +68,27 @@ const CATEGORY_GROUP_METADATA = {
     description: 'Technology news and innovations',
     color: '#0284c7'
   },
+  100: {
+    groupKey: 'health',
+    title: 'Health',
+    icon: '🏥',
+    description: 'Health, wellness and medical news',
+    color: '#16a085'
+  },
+  106: {
+    groupKey: 'education',
+    title: 'Education',
+    icon: '📚',
+    description: 'Education news, exams and learning',
+    color: '#3498db'
+  },
+  112: {
+    groupKey: 'crime-security',
+    title: 'Crime & Security',
+    icon: '🚔',
+    description: 'Crime reports and security updates',
+    color: '#c0392b'
+  },
   22: {
     groupKey: 'other',
     title: 'Other',
@@ -75,32 +99,20 @@ const CATEGORY_GROUP_METADATA = {
 };
 
 router.get('/', async (req, res) => {
-  console.log('=== CATEGORIES GET REQUEST RECEIVED ===');
-  console.log('Timestamp:', new Date().toISOString());
-  console.log('URL:', req.url);
-  console.log('Method:', req.method);
-  console.log('Headers:', JSON.stringify(req.headers, null, 2));
-
   let pool;
   
   try {
-    console.log('[Step 1] Getting database pool...');
     const { getPool } = require('../../config/db');
     pool = getPool();
     
     if (!pool) {
-      console.error('[Step 1] FAILED: Pool is null or undefined');
       return res.status(500).json({
         success: false,
         message: 'Database connection pool not available',
-        error: 'Pool is null',
-        step: 'get_pool'
+        error: 'Pool is null'
       });
     }
-    
-    console.log('[Step 1] SUCCESS: Pool obtained');
 
-    console.log('[Step 2] Executing database query...');
     const categoriesQuery = `
       SELECT
         c.category_id,
@@ -117,15 +129,8 @@ router.get('/', async (req, res) => {
     `;
 
     const result = await pool.query(categoriesQuery);
-    console.log('[Step 2] SUCCESS: Query executed');
-    console.log(`[Step 2] Rows returned: ${result.rows.length}`);
-    
-    if (result.rows.length > 0) {
-      console.log('[Step 2] First row sample:', JSON.stringify(result.rows[0], null, 2));
-    }
 
     if (result.rows.length === 0) {
-      console.warn('[Step 2] WARNING: No categories found in database');
       return res.status(200).json({
         success: true,
         groups: {},
@@ -134,36 +139,21 @@ router.get('/', async (req, res) => {
       });
     }
 
-    console.log('[Step 3] Processing categories...');
     const parents = result.rows.filter(cat => cat.parent_id === null);
     const children = result.rows.filter(cat => cat.parent_id !== null);
-
-    console.log(`[Step 3] Parents found: ${parents.length}`);
-    console.log(`[Step 3] Children found: ${children.length}`);
-    
-    if (parents.length > 0) {
-      console.log('[Step 3] Parent IDs:', parents.map(p => p.category_id).join(', '));
-    }
 
     const groups = {};
     let totalCategories = 0;
 
-    console.log('[Step 4] Building groups...');
     for (const parent of parents) {
-      console.log(`[Step 4] Processing parent: ${parent.category_id} (${parent.name})`);
-      
       const metadata = CATEGORY_GROUP_METADATA[parent.category_id];
 
       if (!metadata) {
-        console.warn(`[Step 4] WARNING: No metadata for parent ID ${parent.category_id}`);
-        console.warn(`[Step 4] Available metadata IDs: ${Object.keys(CATEGORY_GROUP_METADATA).join(', ')}`);
         continue;
       }
 
       const parentChildren = children.filter(cat => cat.parent_id === parent.category_id);
       const groupKey = metadata.groupKey;
-
-      console.log(`[Step 4] Group "${groupKey}" has ${parentChildren.length} children`);
 
       groups[groupKey] = {
         title: metadata.title,
@@ -193,14 +183,10 @@ router.get('/', async (req, res) => {
       totalCategories += parentChildren.length;
     }
 
-    console.log('[Step 5] Handling orphaned categories...');
     const validParentIds = parents.map(p => p.category_id);
     const orphanedChildren = children.filter(cat => !validParentIds.includes(cat.parent_id));
 
     if (orphanedChildren.length > 0) {
-      console.warn(`[Step 5] Found ${orphanedChildren.length} orphaned categories`);
-      console.warn(`[Step 5] Orphaned parent IDs: ${[...new Set(orphanedChildren.map(c => c.parent_id))].join(', ')}`);
-
       if (!groups['other']) {
         groups['other'] = {
           title: 'Other',
@@ -227,11 +213,6 @@ router.get('/', async (req, res) => {
       totalCategories += orphanedChildren.length;
     }
 
-    console.log('[Step 6] Preparing response...');
-    console.log(`[Step 6] Total groups: ${Object.keys(groups).length}`);
-    console.log(`[Step 6] Total categories: ${totalCategories}`);
-    console.log(`[Step 6] Group keys: ${Object.keys(groups).join(', ')}`);
-
     const response = {
       success: true,
       groups: groups,
@@ -244,26 +225,10 @@ router.get('/', async (req, res) => {
         timestamp: new Date().toISOString()
       }
     };
-
-    console.log('[Step 7] Sending response...');
-    console.log('[Step 7] SUCCESS - Response prepared');
     
     return res.status(200).json(response);
 
   } catch (error) {
-    console.error('=== CATEGORIES ERROR ===');
-    console.error('Error name:', error.name);
-    console.error('Error message:', error.message);
-    console.error('Error stack:', error.stack);
-    
-    if (error.code) {
-      console.error('Error code:', error.code);
-    }
-    
-    if (error.detail) {
-      console.error('Error detail:', error.detail);
-    }
-
     return res.status(500).json({
       success: false,
       message: 'Internal server error while fetching categories',
